@@ -1,6 +1,6 @@
 from __future__ import absolute_import, unicode_literals
 
-from django.contrib.auth.models import Group
+from django.contrib.auth.models import Group, User
 from django.core.urlresolvers import reverse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.translation import ugettext as _
@@ -45,7 +45,12 @@ def index(request):
     if not is_searching:
         groups = Group.objects
 
-    groups = groups.order_by('name')
+    # Superusers have implicit permission for seeing every group
+    user = User.objects.get(username=request.user)
+    if user.is_superuser:
+        groups = groups.order_by('name')
+    else:
+        groups = user.groups.all()
 
     if 'ordering' in request.GET:
         ordering = request.GET['ordering']
