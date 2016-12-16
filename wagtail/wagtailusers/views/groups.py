@@ -45,12 +45,15 @@ def index(request):
     if not is_searching:
         groups = Group.objects
 
-    # Superusers have implicit permission for seeing every group
+
     user = User.objects.get(username=request.user)
     if user.is_superuser:
-        groups = groups.order_by('name')
+        # Superusers have implicit permission for seeing every group
+        pass
     else:
-        groups = user.groups.all()
+        groups = groups.filter(id__in=list(user.groups.all().values_list('id', flat=True)))
+
+    groups = groups.order_by('name')
 
     if 'ordering' in request.GET:
         ordering = request.GET['ordering']
