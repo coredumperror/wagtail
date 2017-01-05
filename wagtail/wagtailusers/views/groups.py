@@ -7,6 +7,7 @@ from django.utils.translation import ugettext as _
 from django.views.decorators.vary import vary_on_headers
 
 from wagtail.utils.pagination import paginate
+from wagtail.contrib.wagtailapi.utils import pages_for_site
 from wagtail.wagtailadmin import messages
 from wagtail.wagtailadmin.forms import SearchForm
 from wagtail.wagtailadmin.utils import any_permission_required, permission_required
@@ -45,13 +46,17 @@ def index(request):
     if not is_searching:
         groups = Group.objects
 
-
+    #Filter groups to display based on the site record
     user = User.objects.get(username=request.user)
     if user.is_superuser:
         # Superusers have implicit permission for seeing every group
         pass
     else:
-        groups = groups.filter(id__in=list(user.groups.all().values_list('id', flat=True)))
+        print groups.values('permissions')
+        page_ids = pages_for_site(request.site).values('id')
+        #groups = groups.filter(page_id__in=page_ids)
+        #TODO: figure out which field correlates page permissions with group IDs
+
 
     groups = groups.order_by('name')
 
