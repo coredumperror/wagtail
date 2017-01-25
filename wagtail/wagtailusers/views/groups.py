@@ -47,7 +47,7 @@ def index(request):
     if not is_searching:
         groups = Group.objects
 
-    #Filter groups to display based on the site record
+    # Filter groups to display based on the site record
     user = User.objects.get(username=request.user)
     if user.is_superuser:
         # Superusers have implicit permission for seeing every group
