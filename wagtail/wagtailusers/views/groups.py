@@ -12,6 +12,7 @@ from wagtail.wagtailadmin import messages
 from wagtail.wagtailadmin.forms import SearchForm
 from wagtail.wagtailadmin.utils import any_permission_required, permission_required
 from wagtail.wagtailcore import hooks
+from wagtail.wagtailcore.models import GroupPagePermission
 from wagtail.wagtailusers.forms import GroupForm, GroupPagePermissionFormSet
 
 _permission_panel_classes = None
@@ -52,10 +53,11 @@ def index(request):
         # Superusers have implicit permission for seeing every group
         pass
     else:
-        print groups.values('permissions')
-        page_ids = pages_for_site(request.site).values('id')
-        #groups = groups.filter(page_id__in=page_ids)
-        #TODO: figure out which field correlates page permissions with group IDs
+
+        user_groups = user.groups.values('name')
+        group_perm_ids = GroupPagePermission.objects.filter(group__name__in=user_groups).values('group')
+        print group_perm_ids.values('group')
+        groups = groups.filter(id__in=group_perm_ids)
 
 
     groups = groups.order_by('name')
