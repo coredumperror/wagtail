@@ -21,9 +21,9 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Wagtail\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2016-10-05 16:37+0100\n"
-"PO-Revision-Date: 2016-10-17 13:38+0000\n"
-"Last-Translator: Dominique PERETTI <dperetti@gmail.com>\n"
+"POT-Creation-Date: 2017-02-06 12:33+0000\n"
+"PO-Revision-Date: 2017-02-06 12:37+0000\n"
+"Last-Translator: Matt Westcott <matthew@torchbox.com>\n"
 "Language-Team: French (http://www.transifex.com/torchbox/wagtail/language/"
 "fr/)\n"
 "MIME-Version: 1.0\n"
@@ -132,17 +132,11 @@ msgstr "Ce slug est déjà utilisé dans le contexte de sa page parent \"%s\""
 msgid "Visibility"
 msgstr "Visibilité"
 
-msgid "Public"
-msgstr "Public"
-
-msgid "Private, accessible with the following password"
-msgstr "Privé, accessible avec le mot de passe ci-dessous"
-
-msgid "Password"
-msgstr "Mot de passe"
-
 msgid "This field is required."
 msgstr "Champ requis."
+
+msgid "Please select at least one group."
+msgstr "Vous devez sélectionner au moins un groupe."
 
 msgid "This slug is already in use"
 msgstr "Ce slug est déjà utilisé"
@@ -502,6 +496,9 @@ msgstr "Déverrouillé"
 msgid "Privacy"
 msgstr "Confidentialité"
 
+msgid "Public"
+msgstr "Public"
+
 msgid "Private"
 msgstr "Privée"
 
@@ -780,7 +777,7 @@ msgstr "Explorer les sous-pages de '%(title)s'"
 msgid "Add a child page to '%(title)s'"
 msgstr "Ajouter une sous-page à '%(title)s'"
 
-msgid "Add subpage"
+msgid "Add child page"
 msgstr "Ajouter une sous-page"
 
 #, python-format
@@ -968,10 +965,22 @@ msgstr ""
 "Vous utilisez un navigateur non pris en charge par ce logiciel. Veuillez <a "
 "href=\"http://browsehappy.com/\">mettre à jour votre navigateur</a>."
 
-msgid "Javascript is required to use Wagtail, but it is currently disabled"
+msgid ""
+"\n"
+"            Javascript is required to use Wagtail, but it is currently "
+"disabled.<br />\n"
+"            Here are the <a href=\"http://www.enable-javascript.com/\" "
+"target=\"_blank\" rel=\"noopener\">instructions how to enable JavaScript in "
+"your web browser</a>.\n"
+"        "
 msgstr ""
-"Javascript est nécessaire pour utiliser Wagtail, mais il est actuellement "
-"désactivé,"
+"\n"
+"            Javascript est nécessaire pour utiliser Wagtail mais est "
+"actuellement désactivé.<br />\n"
+"            Voici les <a href=\"http://www.enable-javascript.com/fr/\" "
+"target=\"_blank\" rel=\"noopener\">instructions à suivre pour activer "
+"JavaScript dans votre navigateur</a>.\n"
+"        "
 
 msgid "Go to Wagtail admin interface"
 msgstr "Aller sur l'interface d'administration de Wagtail"
@@ -1156,33 +1165,8 @@ msgstr ""
 msgid "Pages"
 msgstr "Pages"
 
-msgid "Preview draft"
-msgstr "Prévisualiser le brouillon"
-
-msgid "Add child page"
-msgstr "Ajouter une sous-page"
-
-#, python-brace-format
-msgid "Add a child page to '{0}' "
-msgstr "Ajouter une sous-page à '{0}'"
-
 msgid "More"
 msgstr "Plus"
-
-msgid "View more options"
-msgstr "Voir plus d'options"
-
-msgid "Move this page"
-msgstr "Déplacer cette page"
-
-msgid "Delete this page"
-msgstr "Supprimer cette page"
-
-msgid "Unpublish this page"
-msgstr "Dépublier cette page"
-
-msgid "View this page's revision history"
-msgstr "Voir l'historique des versions de cette page"
 
 msgid "Choose an item"
 msgstr "Choisissez un élément"

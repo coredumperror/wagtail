@@ -88,7 +88,7 @@ This example represents a typical blog post:
 
 .. important::
 
-    Ensure that none of your field names are the same as your class names. This will cause errors due to the way Django handles relations (`read more <https://github.com/torchbox/wagtail/issues/503>`_). In our examples we have avoided this by appending "Page" to each model name.
+    Ensure that none of your field names are the same as your class names. This will cause errors due to the way Django handles relations (`read more <https://github.com/wagtail/wagtail/issues/503>`_). In our examples we have avoided this by appending "Page" to each model name.
 
 
 Writing page models
@@ -175,6 +175,8 @@ Customising the page editor interface
 
 The page editor can be customised further. See :doc:`/advanced_topics/customisation/page_editing_interface`.
 
+
+.. _page_type_business_rules:
 
 Parent page / subpage type rules
 --------------------------------

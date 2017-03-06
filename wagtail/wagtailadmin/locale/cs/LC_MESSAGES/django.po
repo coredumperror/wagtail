@@ -10,8 +10,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Wagtail\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2016-10-05 16:37+0100\n"
-"PO-Revision-Date: 2016-10-05 15:39+0000\n"
+"POT-Creation-Date: 2017-02-06 12:33+0000\n"
+"PO-Revision-Date: 2017-02-06 12:37+0000\n"
 "Last-Translator: Matt Westcott <matthew@torchbox.com>\n"
 "Language-Team: Czech (http://www.transifex.com/torchbox/wagtail/language/"
 "cs/)\n"
@@ -116,12 +116,6 @@ msgid ""
 "This slug is already in use within the context of its parent page \"%s\""
 msgstr ""
 "Tento název pro URL je již použit v kontextu s rodičovskou stránkou \"%s\""
-
-msgid "Public"
-msgstr "Veřejné"
-
-msgid "Private, accessible with the following password"
-msgstr "Soukromé, přístupné pod následujícím heslem"
 
 msgid "This field is required."
 msgstr "Toto pole je povinné."
@@ -387,6 +381,9 @@ msgstr "Odemknuto"
 msgid "Privacy"
 msgstr "Viditelnost"
 
+msgid "Public"
+msgstr "Veřejné"
+
 msgid "Private"
 msgstr "Soukromé"
 
@@ -562,7 +559,7 @@ msgstr "Zobrazit podstránky \"%(title)s\""
 msgid "Add a child page to '%(title)s'"
 msgstr "Přidat podstránku pod \"%(title)s\""
 
-msgid "Add subpage"
+msgid "Add child page"
 msgstr "Přidat podstránku"
 
 #, python-format
@@ -805,23 +802,8 @@ msgstr "Stránka '{0}' je nyní odemčena."
 msgid "Pages"
 msgstr "Stránky"
 
-msgid "Add child page"
-msgstr "Přidat podstránku"
-
 msgid "More"
 msgstr "Více"
-
-msgid "Move this page"
-msgstr "Přesunout tuto stránku"
-
-msgid "Delete this page"
-msgstr "Smazat tuto stránku"
-
-msgid "Unpublish this page"
-msgstr "Zrušit publikaci této stránky"
-
-msgid "View this page's revision history"
-msgstr "Zobrazit revize této stránky"
 
 msgid "Choose an item"
 msgstr "Zvolit položku"

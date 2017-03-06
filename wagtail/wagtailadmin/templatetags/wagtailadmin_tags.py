@@ -2,7 +2,6 @@ from __future__ import absolute_import, unicode_literals
 
 import itertools
 
-
 import django
 from django import template
 from django.conf import settings
@@ -14,10 +13,10 @@ from django.utils.safestring import mark_safe
 
 from wagtail.utils.pagination import DEFAULT_PAGE_KEY, replace_page_in_query
 from wagtail.wagtailadmin.menu import admin_menu
-from wagtail.wagtailadmin.navigation import get_navigation_menu_items
+from wagtail.wagtailadmin.navigation import get_explorable_root_page, get_navigation_menu_items
 from wagtail.wagtailadmin.search import admin_search_areas
 from wagtail.wagtailcore import hooks
-from wagtail.wagtailcore.models import PageViewRestriction, UserPagePermissionsProxy
+from wagtail.wagtailcore.models import Page, PageViewRestriction, UserPagePermissionsProxy
 from wagtail.wagtailcore.utils import cautious_slugify as _cautious_slugify
 from wagtail.wagtailcore.utils import camelcase_to_underscore, escape_script
 
@@ -52,6 +51,21 @@ def main_nav(context):
     return {
         'menu_html': admin_menu.render_html(request),
         'request': request,
+    }
+
+
+@register.inclusion_tag('wagtailadmin/shared/breadcrumb.html', takes_context=True)
+def explorer_breadcrumb(context, page, include_self=False):
+    user = context['request'].user
+
+    # find the closest common ancestor of the pages that this user has direct explore permission
+    # (i.e. add/edit/publish/lock) over; this will be the root of the breadcrumb
+    cca = get_explorable_root_page(user)
+    if not cca:
+        return {'pages': Page.objects.none()}
+
+    return {
+        'pages': page.get_ancestors(inclusive=include_self).descendant_of(cca, inclusive=True)
     }
 
 
@@ -195,6 +209,7 @@ class EscapeScriptNode(template.Node):
         nodelist = parser.parse(('end' + EscapeScriptNode.TAG_NAME,))
         parser.delete_first_token()
         return cls(nodelist)
+
 
 register.tag(EscapeScriptNode.TAG_NAME, EscapeScriptNode.handle)
 
@@ -406,3 +421,8 @@ def replace_page_param(query, page_number, page_key='p'):
     Replaces ``page_key`` from query string with ``page_number``.
     """
     return conditional_escape(replace_page_in_query(query, page_number, page_key))
+
+
+@register.filter('abs')
+def _abs(val):
+    return abs(val)

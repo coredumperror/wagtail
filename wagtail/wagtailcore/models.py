@@ -2,7 +2,6 @@ from __future__ import absolute_import, unicode_literals
 
 import json
 import logging
-import os
 from collections import defaultdict
 from django import VERSION as DJANGO_VERSION
 
@@ -27,11 +26,12 @@ from django.utils.encoding import python_2_unicode_compatible
 from django.utils.functional import cached_property
 from django.utils.six import StringIO
 from django.utils.six.moves.urllib.parse import urlparse
-from django.utils.text import slugify
+from django.utils.text import capfirst, slugify
 from django.utils.translation import ugettext_lazy as _
 from modelcluster.models import ClusterableModel, get_all_child_relations
 from treebeard.mp_tree import MP_Node
 
+from wagtail.utils.compat import user_is_authenticated
 from wagtail.wagtailcore.query import PageQuerySet, TreeQuerySet
 from wagtail.wagtailcore.signals import page_published, page_unpublished
 from wagtail.wagtailcore.url_routing import RouteResult
@@ -248,6 +248,7 @@ def get_default_page_content_type():
 class BasePageManager(models.Manager):
     def get_queryset(self):
         return PageQuerySet(self.model).order_by('path')
+
 
 PageManager = BasePageManager.from_queryset(PageQuerySet)
 
@@ -567,8 +568,7 @@ class Page(six.with_metaclass(PageBase, AbstractPage, index.Indexed, Clusterable
             errors.append(
                 checks.Error(
                     "Manager does not inherit from PageManager",
-                    hint="Ensure that custom Page managers inherit from {}.{}".format(
-                        PageManager.__module__, PageManager.__name__),
+                    hint="Ensure that custom Page managers inherit from wagtail.wagtailcore.models.PageManager",
                     obj=cls,
                     id='wagtailcore.E002',
                 )
@@ -644,7 +644,7 @@ class Page(six.with_metaclass(PageBase, AbstractPage, index.Indexed, Clusterable
             # unchanged.
             return self
         elif isinstance(self, model_class):
-            # self is already an instance of the most specific class
+            # self is already the an instance of the most specific class
             return self
         else:
             return content_type.get_object_for_this_type(id=self.id)
@@ -1003,11 +1003,11 @@ class Page(six.with_metaclass(PageBase, AbstractPage, index.Indexed, Clusterable
     @classmethod
     def get_verbose_name(cls):
         """
-            Returns the human-readable "verbose name" of this page model e.g "Blog page".
+        Returns the human-readable "verbose name" of this page model e.g "Blog page".
         """
         # This is similar to doing cls._meta.verbose_name.title()
         # except this doesn't convert any characters to lowercase
-        return ' '.join([word[0].upper() + word[1:] for word in cls._meta.verbose_name.split()])
+        return capfirst(cls._meta.verbose_name)
 
     @property
     def status_string(self):
@@ -1039,7 +1039,7 @@ class Page(six.with_metaclass(PageBase, AbstractPage, index.Indexed, Clusterable
     @transaction.atomic  # only commit when all descendants are properly updated
     def move(self, target, pos=None):
         """
-        Extension to the treebeard 'move' method to ensure that url_path is updated.
+        Extension to the treebeard 'move' method to ensure that url_path is updated too.
         """
         old_url_path = Page.objects.get(id=self.id).url_path
         super(Page, self).move(target, pos=pos)
@@ -1182,14 +1182,13 @@ class Page(six.with_metaclass(PageBase, AbstractPage, index.Indexed, Clusterable
 
         return page_copy
 
-    def permissions_for_user(self, user, request=None):
-        """
-        Return a PagePermissionsTester object defining what actions the user can perform on this page.
+    copy.alters_data = True
 
-        Callers can optionally provide the current request object as well, which is needed for explorability and
-        choosability permission checks. Note that user and request.user must match, or unexpected behavior may result.
+    def permissions_for_user(self, user):
         """
-        user_perms = UserPagePermissionsProxy(user, request)
+        Return a PagePermissionsTester object defining what actions the user can perform on this page
+        """
+        user_perms = UserPagePermissionsProxy(user)
         return user_perms.for_page(self)
 
     def dummy_request(self, original_request=None, **meta):
@@ -1381,217 +1380,9 @@ class Page(six.with_metaclass(PageBase, AbstractPage, index.Indexed, Clusterable
         context['action_url'] = action_url
         return TemplateResponse(request, self.password_required_template, context)
 
-    def get_explorable_children(self, request):
-        """
-        Returns a queryset of all the node's children that the current user is permitted to explore.
-        """
-        return filter_explorable_pages(self.get_children(), request)
-
-    def get_choosable_children(self, request):
-        """
-        Returns a queryset of all the node's children that the current user is permitted to choose.
-        """
-        return filter_choosable_pages(self.get_children(), request)
-
-    def get_explorable_ancestors(self, request):
-        """
-        Returns a queryset of all the node's ancestors that the current user is permitted to explore.
-        """
-        return self._get_permitted_ancestors(request)
-
-    def get_choosable_ancestors(self, request):
-        """
-        Returns a queryset of all the node's ancestors that the current user is permitted to choose.
-        """
-        return self._get_permitted_ancestors(request, choosable=True)
-
-    def is_explorable_root(self, request):
-        """
-        Returns True if this page is the root of the current user's explorable section of the page tree.
-        """
-        # A superuser's explorable root is the Root page.
-        if request.user.is_superuser:
-            return self.is_root()
-
-        return self.path == get_closest_common_ancestor_path(request)
-
-    def is_choosable_root(self, request):
-        """
-        Returns True if this page is the root of the current user's choosable section of the page tree.
-        """
-        # A superuser's explorable root is the Root page.
-        if request.user.is_superuser:
-            return self.is_root()
-
-        return self.path == get_closest_common_ancestor_path(request, choosable=True)
-
-    def _get_permitted_ancestors(self, request, choosable=False):
-        """
-        Internal function that does the work for get_explorable_ancestors() and get_choosable_ancestors().
-        """
-        # Superusers see all the ancestors.
-        if request.user.is_superuser:
-            return self.get_ancestors()
-
-        # Copied this algorithm from TreeQuerySet.ancestor_of_q, but tweaked it to remove this page's path.
-        ancestor_paths = [
-            self.path[0:pos]
-            for pos in range(0, len(self.path) + 1 - self.steplen, self.steplen)[1:]
-        ]
-
-        cca_path = get_closest_common_ancestor_path(request, choosable)
-        if cca_path:
-            # Return only pages with paths that are at least as long as the Closest Common Ancestor's path.
-            explorable_ancestor_paths = [path for path in ancestor_paths if len(path) >= len(cca_path)]
-            return Page.objects.filter(path__in=explorable_ancestor_paths)
-        else:
-            # If the user has no permitted paths, they have no explorable ancestors.
-            return Page.objects.none()
-
     class Meta:
         verbose_name = _('page')
         verbose_name_plural = _('pages')
-
-
-def get_explorable_page_paths(request):
-    """
-    Returns a pair of lists of treebeard "path" values for the current User's explorable Pages.
-    The first list is the set of paths which the current User is permitted to administer (meaning they can administer
-    all children of those paths, too).
-    The second list is the paths which must be shown to the User in order for them to navigate to their permitted Pages
-    in the Explorer. Unlike the paths in the first list, the children of these paths should not to be made visible,
-    which is why the lists are separated.
-
-    The first element of the second list is always the Closest Common Ancestor of the User's explorable Pages.
-    """
-    return _get_permitted_page_paths(request)
-
-
-def get_choosable_page_paths(request):
-    """
-    Returns a pair of lists of treebeard "path" values for the current User's choosable Pages.
-    The first list is the set of Page paths for which the current User has the "choose" Permission (meaning they
-    can choose all children of those paths, too).
-    The second list is the paths which must be shown to the User in order for them to navigate to their choosable Pages
-    in the Page Chooser. Unlike the paths in the first list, these pages are NOT choosable, and should not be selectable
-    in the Page Chooser, nor should their children be displayed.
-
-    The first element of the second list is always the Closest Common Ancestor of the User's choosable Pages.
-    """
-    return _get_permitted_page_paths(request, choosable=True)
-
-
-def _get_permitted_page_paths(request, choosable=False):
-    """
-    Internal function that does the work for get_explorable_page_paths() and get_choosable_page_paths().
-
-    Use choosable=True to return paths for Pages for which the current User has the "choose" Permission, instead of
-    returning paths for Pages that the User is allowed to administer.
-
-    NOTE: The first element of the second list is always the Closest Common Ancestor of the User's permitted Pages.
-    """
-    # We cache the output of this function because it can potentially be called several times per request. The cache
-    # we use persists only for the current request.
-    try:
-        cache = request.cache
-    except AttributeError:
-        cache = None
-        permitted_paths, required_ancestors = [], []
-    else:
-        cache_key = 'choosable_pages' if choosable else 'explorable_pages'
-        permitted_paths, required_ancestors = cache.get(cache_key, ([], []))
-
-    if not permitted_paths:
-        permitted_paths = UserPagePermissionsProxy(request.user, request).permitted_paths(choosable)
-
-        # Calculate the "closest common ancestor" of all the permitted Pages by finding their common prefix, then
-        # chopping off the end to make the length a multiple of Page.steplen.
-        if permitted_paths:
-            common_prefix = os.path.commonprefix(permitted_paths)
-            # When len(common_prefix) % Page.steplen == 0, we want the entire string, but common_prefix[:-0] returns ''.
-            # So we use common_prefix[:None], which returns the whole string.
-            cca_path = common_prefix[:-(len(common_prefix) % Page.steplen) or None]
-            required_ancestors.append(cca_path)
-            # Now include all the ancestors of each permitted Page, up to their closest common ancestor. This lets
-            # users see parent pages that they can't administer, which allows them to traverse the tree down to pages
-            # that they can.
-            temp = set()
-            for path in permitted_paths:
-                while len(path) > len(cca_path):
-                    path = path[:-Page.steplen]
-                    if path not in required_ancestors:
-                        temp.add(path)
-            # We need to make sure that the CCA is first in required_ancestors (so the /admin/pages/ page can be set to
-            # display the page tree starting at the CCA), but the order of the other paths doesn't matter.
-            required_ancestors.extend(temp)
-        else:
-            # The user is not permitted to see any pages, and therefore has no required ancestors, either.
-            pass
-
-        if cache is not None:
-            cache.set(cache_key, (permitted_paths, required_ancestors), None)
-
-    return permitted_paths, required_ancestors
-
-
-def convert_permitted_paths_to_Q(permitted_paths, required_ancestors):
-    """
-    Converts the outputs from get_explorable_page_paths() or get_choosable_page_paths() to a Q object which will
-    filter a QuerySet down to the appropriate set of Pages.
-    """
-    path_Qs = Q()
-    for path in permitted_paths:
-        path_Qs = path_Qs | Q(path__startswith=path)
-    for ancestor in required_ancestors:
-        path_Qs = path_Qs | Q(path=ancestor)
-    return path_Qs
-
-
-def get_closest_common_ancestor_path(request, choosable=False):
-    """
-    Returns the Closest Common Ancestor for the specified User, or None if the User has no explorable Page paths.
-
-    Pass in choosable=True to get the CCA path of the User's choosable pages, rather then their explorable pages.
-    """
-    permitted_paths, required_ancestors = _get_permitted_page_paths(request, choosable)
-    if permitted_paths:
-        return required_ancestors[0]
-    else:
-        return None
-
-
-def filter_explorable_pages(queryset, request, include_ancestors=True):
-    """
-    This filters the queryset to include only those Pages which are explorable by the current User.
-    """
-    return _filter_permitted_pages(queryset, request, include_ancestors, choosable=False)
-
-
-def filter_choosable_pages(queryset, request, include_ancestors=True):
-    """
-    This filters the queryset to include only those Pages which are choosable by the current User.
-    """
-    return _filter_permitted_pages(queryset, request, include_ancestors, choosable=True)
-
-
-def _filter_permitted_pages(queryset, request, include_ancestors=True, choosable=False):
-    """
-    This filters the queryset to include only those Pages which are explorable/choosable by the given User.
-    If include_ancestors is False, ancestor pages which are normally required to allow the User to
-    navigate to their permitted pages will not be included.
-    """
-    # Superusers can explore all pages.
-    if request.user.is_superuser:
-        return queryset
-
-    permitted_paths, required_ancestors = _get_permitted_page_paths(request, choosable)
-    if permitted_paths:
-        return queryset.filter(
-            convert_permitted_paths_to_Q(permitted_paths, required_ancestors if include_ancestors else [])
-        )
-    else:
-        # If the User has no permitted pages, display nothing.
-        return queryset.none()
 
 
 @receiver(pre_delete, sender=Page)
@@ -1736,6 +1527,12 @@ class PageRevision(models.Model):
                 page.go_live_at.isoformat()
             )
 
+    def get_previous(self):
+        return self.get_previous_by_created_at(page=self.page)
+
+    def get_next(self):
+        return self.get_next_by_created_at(page=self.page)
+
     def __str__(self):
         return '"' + six.text_type(self.page) + '" at ' + six.text_type(self.created_at)
 
@@ -1748,8 +1545,8 @@ PAGE_PERMISSION_TYPES = [
     ('add', _("Add"), _("Add/edit pages you own")),
     ('edit', _("Edit"), _("Edit any page")),
     ('publish', _("Publish"), _("Publish any page")),
+    ('bulk_delete', _("Bulk delete"), _("Delete pages with children")),
     ('lock', _("Lock"), _("Lock/unlock any page")),
-    ('choose', _("Choose"), _("Select any page in a chooser")),
 ]
 
 PAGE_PERMISSION_TYPE_CHOICES = [
@@ -1782,14 +1579,10 @@ class GroupPagePermission(models.Model):
 
 
 class UserPagePermissionsProxy(object):
-    """
-    Helper object that encapsulates all the page permission rules that this user has
-    across the page hierarchy.
-    A request object can be optionally provided. It will be used when determining explorability and choosability.
-    """
-    def __init__(self, user, request=None):
+    """Helper object that encapsulates all the page permission rules that this user has
+    across the page hierarchy."""
+    def __init__(self, user):
         self.user = user
-        self.request = request
 
         if user.is_active and not user.is_superuser:
             self.permissions = GroupPagePermission.objects.filter(group__user=self.user).select_related('page')
@@ -1870,62 +1663,10 @@ class UserPagePermissionsProxy(object):
         """Return True if the user has permission to publish any pages"""
         return self.publishable_pages().exists()
 
-    def choosable_pages(self):
-        """Return a queryset of the pages that this user has permission to choose"""
-        # Deal with the trivial cases first...
-        if not self.user.is_active:
-            return Page.objects.none()
-        if self.user.is_superuser:
-            return Page.objects.all()
-
-        choosable_pages = Page.objects.none()
-
-        for perm in self.permissions.filter(permission_type='choose'):
-            # user has choose permission on any subpage of perm.page (including perm.page itself)
-            choosable_pages |= Page.objects.descendant_of(perm.page, inclusive=True)
-
-        return choosable_pages
-
-    def can_choose_pages(self):
-        """Return True if the user has permission to Choose any pages"""
-        return self.choosable_pages().exists()
-
-    def permitted_paths(self, choosable=False):
-        """
-        Return a list of paths to Pages that this User is directly permitted to explore/choose.
-
-        This is not the same as the *_pages functions in this class, as it only returns paths to
-        the pages which are directly permissioned in the GroupPagePermissions model. It does not return
-        decendant paths of said pages.
-
-        Use choosable=True to return paths for Pages that are choosable, rather than Pages that are explorable.
-        """
-        if not self.user.is_active:
-            return []
-        if self.user.is_superuser:
-            # Superusers are permitted to explore the tree root, which lets them explore every Page on the server.
-            return [Page.get_first_root_node().path]
-
-        # Retrieve the path(s) for each Page for which this user has either at least one GroupPagePermission
-        # that provides explorability, or for which the user has the 'choose' GroupPagePermission.
-        permitted_paths = Page.objects.distinct().values_list('path', flat=True).filter(
-            group_permissions__group__in=self.user.groups.all()
-        )
-        if choosable:
-            permitted_paths = permitted_paths.filter(group_permissions__permission_type='choose')
-        else:
-            explorable_perms = [perm[0] for perm in PAGE_PERMISSION_TYPES if perm[0] != 'choose']
-            permitted_paths = permitted_paths.filter(group_permissions__permission_type__in=explorable_perms)
-        return list(permitted_paths)
-
-    def has_permitted_paths(self):
-        return bool(self.permitted_paths())
-
 
 class PagePermissionTester(object):
     def __init__(self, user_perms, page):
         self.user = user_perms.user
-        self.request = user_perms.request
         self.user_perms = user_perms
         self.page = page
         self.page_is_root = page.depth == 1  # Equivalent to page.is_root()
@@ -1960,21 +1701,34 @@ class PagePermissionTester(object):
         if self.page_is_root:  # root node is not a page and can never be deleted, even by superusers
             return False
 
-        if self.user.is_superuser or ('publish' in self.permissions):
-            # Users with publish permission can unpublish any pages that need to be unpublished to achieve deletion
+        if self.user.is_superuser:
+            # superusers require no further checks
             return True
 
-        elif 'edit' in self.permissions:
-            # user can only delete if there are no live pages in this subtree
-            return (not self.page.live) and (not self.page.get_descendants().filter(live=True).exists())
+        # if the user does not have bulk_delete permission, they may only delete leaf pages
+        if 'bulk_delete' not in self.permissions and not self.page.is_leaf():
+            return False
+
+        if 'edit' in self.permissions:
+            # if the user does not have publish permission, we also need to confirm that there
+            # are no published pages here
+            if 'publish' not in self.permissions:
+                pages_to_delete = self.page.get_descendants(inclusive=True)
+                if pages_to_delete.live().exists():
+                    return False
+
+            return True
 
         elif 'add' in self.permissions:
-            # user can only delete if all pages in this subtree are unpublished and owned by this user
-            return (
-                (not self.page.live) and
-                (self.page.owner_id == self.user.pk) and
-                (not self.page.get_descendants().exclude(live=False, owner=self.user).exists())
-            )
+            pages_to_delete = self.page.get_descendants(inclusive=True)
+            if 'publish' in self.permissions:
+                # we don't care about live state, but all pages must be owned by this user
+                # (i.e. eliminating pages owned by this user must give us the empty set)
+                return not pages_to_delete.exclude(owner=self.user).exists()
+            else:
+                # all pages must be owned by this user and non-live
+                # (i.e. eliminating non-live pages owned by this user must give us the empty set)
+                return not pages_to_delete.exclude(live=False, owner=self.user).exists()
 
         else:
             return False
@@ -2066,48 +1820,46 @@ class PagePermissionTester(object):
             # no publishing required, so the already-tested 'add' permission is sufficient
             return True
 
-    def can_choose(self, allow_ancestors=True):
-        if not self.user.is_active:
-            return False
-        if self.user.is_superuser:
-            return True
-
-        # This does the same thing that the constructor does with self.user to create self.permissions.
-        current_user_perms = set(
-            perm.permission_type
-            for perm in GroupPagePermission.objects.filter(group__user=self.user).select_related('page')
-            if self.page.path.startswith(perm.page.path)
-        )
-        if 'choose' in current_user_perms:
-            return True
-
-        # If this page isn't directly permitted, return whether or not this page is in the required ancestors of the
-        # user's choosable section(s) of the tree. Unless the caller told us not to allow ancestors.
-        return allow_ancestors and self.page.path in get_choosable_page_paths(self.request)[1]
-
-    def can_explore(self, allow_ancestors=True):
-        """
-        If allow_ancestors is False, required ancestors will be not considered explorable.
-        This lets Explorer display a required ancestor, but still prohibit users from performing any actions upon it.
-        """
-        if not self.user.is_active:
-            return False
-
-        # If this page is permitted, return True immediately.
-        if (
-            self.can_add_subpage() or self.can_edit() or self.can_delete() or
-            self.can_unpublish() or self.can_publish() or self.can_lock()
-        ):
-            return True
-
-        # If this page isn't directly permitted, return whether or not this page is in the required ancestors of the
-        # user's explorable section(s) of the tree. Unless the caller told us not to allow ancestors.
-        return allow_ancestors and self.page.path in get_explorable_page_paths(self.request)[1]
-
 
 class PageViewRestriction(models.Model):
-    page = models.ForeignKey('Page', verbose_name=_('page'), related_name='view_restrictions', on_delete=models.CASCADE)
-    password = models.CharField(verbose_name=_('password'), max_length=255)
+    NONE = 'none'
+    PASSWORD = 'password'
+    GROUPS = 'groups'
+    LOGIN = 'login'
+
+    RESTRICTION_CHOICES = (
+        (NONE, _("Public")),
+        (LOGIN, _("Private, accessible to logged-in users")),
+        (PASSWORD, _("Private, accessible with the following password")),
+        (GROUPS, _("Private, accessible to users in specific groups")),
+    )
+
+    restriction_type = models.CharField(
+        max_length=20, choices=RESTRICTION_CHOICES)
+    page = models.ForeignKey(
+        'Page', verbose_name=_('page'), related_name='view_restrictions', on_delete=models.CASCADE
+    )
+    password = models.CharField(verbose_name=_('password'), max_length=255, blank=True)
+    groups = models.ManyToManyField(Group, blank=True)
+
+    def accept_request(self, request):
+        if self.restriction_type == PageViewRestriction.PASSWORD:
+            passed_restrictions = request.session.get('passed_page_view_restrictions', [])
+            if self.id not in passed_restrictions:
+                return False
+
+        elif self.restriction_type == PageViewRestriction.LOGIN:
+            if not user_is_authenticated(request.user):
+                return False
+
+        elif self.restriction_type == PageViewRestriction.GROUPS:
+            if not request.user.is_superuser:
+                current_user_groups = request.user.groups.all()
+
+                if not any(group in current_user_groups for group in self.groups.all()):
+                    return False
+
+        return True
 
     class Meta:
         verbose_name = _('page view restriction')
@@ -2117,6 +1869,7 @@ class PageViewRestriction(models.Model):
 class BaseCollectionManager(models.Manager):
     def get_queryset(self):
         return TreeQuerySet(self.model).order_by('path')
+
 
 CollectionManager = BaseCollectionManager.from_queryset(TreeQuerySet)
 

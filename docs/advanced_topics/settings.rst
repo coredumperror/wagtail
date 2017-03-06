@@ -226,9 +226,9 @@ Providing an API key for the Embedly service will use that as a embed backend, w
 
 To use Embedly, you must also install their Python module:
 
-.. code-block:: sh
+.. code-block:: console
 
-  pip install embedly
+  $ pip install embedly
 
 
 Images
@@ -614,7 +614,7 @@ These two files should reside in your project directory (``myproject/myproject/`
 
 .. code-block:: python
 
-  from django.conf.urls import patterns, include, url
+  from django.conf.urls import include, url
   from django.conf.urls.static import static
   from django.views.generic.base import RedirectView
   from django.contrib import admin
@@ -627,7 +627,7 @@ These two files should reside in your project directory (``myproject/myproject/`
   from wagtail.wagtailsearch import urls as wagtailsearch_urls
 
 
-  urlpatterns = patterns('',
+  urlpatterns = [
       url(r'^django-admin/', include(admin.site.urls)),
 
       url(r'^admin/', include(wagtailadmin_urls)),
@@ -637,7 +637,7 @@ These two files should reside in your project directory (``myproject/myproject/`
       # For anything not caught by a more specific rule above, hand over to
       # Wagtail's serving mechanism
       url(r'', include(wagtail_urls)),
-  )
+  ]
 
 
   if settings.DEBUG:
@@ -645,6 +645,6 @@ These two files should reside in your project directory (``myproject/myproject/`
 
       urlpatterns += staticfiles_urlpatterns() # tell gunicorn where static files are in dev mode
       urlpatterns += static(settings.MEDIA_URL + 'images/', document_root=os.path.join(settings.MEDIA_ROOT, 'images'))
-      urlpatterns += patterns('',
-          (r'^favicon\.ico$', RedirectView.as_view(url=settings.STATIC_URL + 'myapp/images/favicon.ico'))
-      )
+      urlpatterns += [
+          url(r'^favicon\.ico$', RedirectView.as_view(url=settings.STATIC_URL + 'myapp/images/favicon.ico'))
+      ]

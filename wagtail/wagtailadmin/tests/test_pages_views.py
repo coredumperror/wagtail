@@ -6,7 +6,6 @@ import os
 
 import django
 import mock
-from bs4 import BeautifulSoup
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
@@ -22,7 +21,7 @@ from django.utils.dateparse import parse_date
 
 from wagtail.tests.testapp.models import (
     EVENT_AUDIENCE_CHOICES, Advert, AdvertPlacement, BusinessChild, BusinessIndex, BusinessSubIndex,
-    DefaultStreamPage,
+    DefaultStreamPage, EventCategory,
     EventPage, EventPageCarouselItem, FilePage, SimplePage, SingleEventPage, SingletonPage,
     StandardChild, StandardIndex, TaggedPage)
 from wagtail.tests.utils import WagtailTestUtils
@@ -304,8 +303,25 @@ class TestPageExplorerSignposting(TestCase, WagtailTestUtils):
         self.assertTrue(self.client.login(username='siteeditor', password='password'))
         response = self.client.get(reverse('wagtailadmin_explore_root'))
         self.assertEqual(response.status_code, 200)
-        # Non-admins should be shown the Site's homepage at the Explorer root, since it's the Closest Common Ancestor.
-        self.assertContains(response, "Welcome to the Wagtail test site!")
+        # Non-admin should get a simple "create pages as children of the homepage" prompt
+        self.assertContains(
+            response,
+            "Pages created here will not be accessible at any URL. "
+            "To add pages to an existing site, create them as children of the homepage."
+        )
+
+    def test_nonadmin_at_non_site_page(self):
+        self.assertTrue(self.client.login(username='siteeditor', password='password'))
+        response = self.client.get(reverse('wagtailadmin_explore', args=(self.no_site_page.id, )))
+        self.assertEqual(response.status_code, 200)
+        # Non-admin should get a warning about unroutable pages
+        self.assertContains(
+            response,
+            (
+                "There is no site record for this location. "
+                "Pages created here will not be accessible at any URL."
+            )
+        )
 
     def test_nonadmin_at_site_page(self):
         self.assertTrue(self.client.login(username='siteeditor', password='password'))
@@ -315,35 +331,30 @@ class TestPageExplorerSignposting(TestCase, WagtailTestUtils):
         self.assertNotContains(response, "Pages created here will not be accessible")
 
 
+
 class TestExplorablePageVisibility(TestCase, WagtailTestUtils):
     """
     Test the way that the Explorable Pages functionality manifests within the Explorer.
     This is isolated in its own test case because it requires a custom page tree and custom set of
     users and groups.
-
     The fixture sets up this page tree:
-
     ========================================================
     ID Site          Path
     ========================================================
     1              /
-
     2  testserver  /home/
     3  testserver  /home/about-us/
-
-    4  example.com /home/
-    5  example.com /home/content/
-    6  example.com /home/content/page-1/
-    7  example.com /home/content/page-2/
-    9  example.com /home/content/page-2/child-1
-    8  example.com /home/other-content/
-    10 example.com /home-2/
+    4  example.com /example-home/
+    5  example.com /example-home/content/
+    6  example.com /example-home/content/page-1/
+    7  example.com /example-home/content/page-2/
+    9  example.com /example-home/content/page-2/child-1
+    8  example.com /example-home/other-content/
+    10 example2.com /home-2/
     ========================================================
-
     Group 1 has explore and choose permissions rooted at testserver's homepage.
-    Group 2 has explore and choose permissions rooted at exammple.com's page-1.
-    Group 3 has explore and choose permissions rooted at exammple.com's other-content.
-
+    Group 2 has explore and choose permissions rooted at example.com's page-1.
+    Group 3 has explore and choose permissions rooted at example.com's other-content.
     User "jane" is in Group 1.
     User "bob" is in Group 2.
     User "sam" is in Groups 1 and 2.
@@ -354,15 +365,7 @@ class TestExplorablePageVisibility(TestCase, WagtailTestUtils):
 
     fixtures = ['test_explorable_pages.json']
 
-    # TODO: Tests to write:
-    # Possibly test these? Not really sure how, and they'd belong in another test file anyway:
-    # Assert get_explorable_page_paths() output is cached.
-    # Assert that just the user's explorable paths cache is cleared when a User's Groups change.
-    # Assert that all users' explorable paths cache is cleared when a Grou's Permissions change.
-    # Assert that all user's explorable paths cache is cleared when a Page is moved.
-
-    # These belong in yet another test file:
-    # Assert the new Choose permission is applied correctly. It doesn't actually DO anything yet, though.
+    # Integration tests adapted from @coredumperror
 
     def test_admin_can_explore_every_page(self):
         self.assertTrue(self.client.login(username='superman', password='password'))
@@ -384,131 +387,40 @@ class TestExplorablePageVisibility(TestCase, WagtailTestUtils):
         self.assertEqual(response.status_code, 200)
 
         self.assertInHTML(
-            """<li class="home"><a href="/admin/pages/" class=" icon icon-home text-replace">Home</a></li>""",
+            """<li class="home"><a href="/admin/pages/" class="icon icon-home text-replace">Home</a></li>""",
             str(response.content)
         )
         self.assertInHTML("""<li><a href="/admin/pages/4/">Welcome to example.com!</a></li>""", str(response.content))
         self.assertInHTML("""<li><a href="/admin/pages/5/">Content</a></li>""", str(response.content))
 
-    def test_nonadmin_sees_closest_common_ancestor_as_explorer_root(self):
-        self.assertTrue(self.client.login(username='jane', password='password'))
-        response = self.client.get(reverse('wagtailadmin_explore_root'))
-        self.assertEqual(response.status_code, 200)
-        # Being in Group 1, Jane should see the testserver homepage at the Explorer root.
-        self.assertContains(response, """<a href="/admin/pages/2/edit/">Welcome to testserver!</a>""")
-        self.client.logout()
-
-        self.assertTrue(self.client.login(username='bob', password='password'))
-        response = self.client.get(reverse('wagtailadmin_explore_root'))
-        self.assertEqual(response.status_code, 200)
-        # Being in Group 2, Bob should see Page 1 at the Explorer root.
-        self.assertContains(response, """<a href="/admin/pages/6/edit/">Page 1</a>""")
-        # Bob should not be able to see any reference to the ancestors of Page 1, even in the breadcrumbs.
-        self.assertNotContains(response, "Welcome to example.com!")
-        self.assertNotContains(response, "Content")
-        self.client.logout()
-
-        self.assertTrue(self.client.login(username='sam', password='password'))
-        response = self.client.get(reverse('wagtailadmin_explore_root'))
-        self.assertEqual(response.status_code, 200)
-        # Being in Groups 1 and 2, Sam should see the Root page, since it's the Closest Common Ancestor of both Groups.
-        self.assertContains(response, "Welcome to testserver!")
-        self.assertContains(response, "Welcome to example.com!")
-        self.client.logout()
-
-    def test_nonadmin_at_unpermitted_page(self):
-        self.assertTrue(self.client.login(username='bob', password='password'))
-        response = self.client.get(reverse('wagtailadmin_explore', args=[7]), HTTP_HOST="example.com")
-        # Bob has permission to explore example.com's "Page 1", but not "Page 2", so Explorer should deny access.
-        self.assertEqual(response.status_code, 403)
-
-    def test_nonadmin_sees_only_explorable_pages_in_listings(self):
-        self.assertTrue(self.client.login(username='sam', password='password'))
-        # Being in Groups 1 and 2, Sam's Closest Common Ancestor is the Root page, meaning she can explore (but not
-        # administer) the ancestors of Page 1. Thus, she should see Page 1 but not Page 2 when exploring the "Content"
-        # page.
-        response = self.client.get(reverse('wagtailadmin_explore', args=[5]), HTTP_HOST="example.com")
-        self.assertEqual(response.status_code, 200)
-        self.assertInHTML("""<a href="/admin/pages/6/edit/" title="Edit this page">Page 1</a>""", str(response.content))
-        self.assertNotContains(response, "Page 2")
-
-        soup = BeautifulSoup(response.content, 'html5lib')
-        # The actions list for the Content parent page should *not* exist.
-        self.assertFalse(soup.select('table.listing thead td.title ul.actions'))
-        # But the actions list for Page 1 *should* exist.
-        index_actions_lists = soup.select('table.listing tbody td.title ul.actions')
-        self.assertEqual(len(index_actions_lists), 1)
-
-        # Sam should not see the "Other Content" page when exploring the example.com homepage.
-        response = self.client.get(reverse('wagtailadmin_explore', args=[4]), HTTP_HOST="example.com")
-        self.assertEqual(response.status_code, 200)
-        self.assertNotContains(response, "Other Content")
-
     def test_nonadmin_sees_breadcrumbs_up_to_cca(self):
         self.assertTrue(self.client.login(username='josh', password='password'))
-        response = self.client.get(reverse('wagtailadmin_explore', args=[6]), HTTP_HOST='example.com')
+        response = self.client.get(reverse('wagtailadmin_explore', args=[6]))
         self.assertEqual(response.status_code, 200)
         # While at "Page 1", Josh should see the breadcrumbs leading only as far back as the example.com homepage,
         # since it's his Closest Common Ancestor.
         self.assertInHTML(
-            """<li class="home"><a href="/admin/pages/" class=" icon icon-home text-replace">Home</a></li>""",
+            """<li class="home"><a href="/admin/pages/4/" class="icon icon-home text-replace">Home</a></li>""",
             str(response.content)
         )
         self.assertInHTML("""<li><a href="/admin/pages/5/">Content</a></li>""", str(response.content))
         # The page title shouldn't appear because it's the "home" breadcrumb.
         self.assertNotContains(response, "Welcome to example.com!")
 
-    def test_nonadmin_with_no_page_perms_sees_nothing_in_explorer(self):
-        self.assertTrue(self.client.login(username='mary', password='password'))
-        response = self.client.get(reverse('wagtailadmin_explore_root'))
-        self.assertEqual(response.status_code, 200)
-        # Being in no Groups, Mary should see the Root page, but not see any child pages.
-        self.assertInHTML("<title>Wagtail - Exploring Root</title>", str(response.content))
-        self.assertContains(response, "No pages have been created at this location.")
-
-    def test_admin_can_index_and_preview_every_revision(self):
-        self.assertTrue(self.client.login(username='superman', password='password'))
-        for page in Page.objects.filter(pk__gt=1):
-            response = self.client.get(reverse('wagtailadmin_pages:revisions_index', args=[page.pk]))
-            self.assertEqual(response.status_code, 200)
-            page.save_revision()
-            for revision in page.revisions.all():
-                response = self.client.get(reverse('wagtailadmin_pages:revisions_view', args=[page.pk, revision.pk]))
-                self.assertEqual(response.status_code, 200)
-
-    def test_nonadmin_can_index_and_preview_revisions_only_for_permitted_pages(self):
+    def test_admin_home_page_changes_with_permissions(self):
         self.assertTrue(self.client.login(username='bob', password='password'))
-        # Page 2 is 404, Page 6 is 200, and Page 4 is 403
-        page1 = Page.objects.get(pk=6)
-        page1_revision = page1.save_revision()
-        testserver_home = Page.objects.get(pk=2)
-        testserver_home_revision = testserver_home.save_revision()
-        example_home = Page.objects.get(pk=4)
-        example_home_revision = example_home.save_revision()
-
-        # Bob is allowed to see Page 1, and it's on example.com, so it should give 200.
-        response = self.client.get(
-            reverse('wagtailadmin_pages:revisions_index', args=[page1.pk]),
-            HTTP_HOST='example.com'
-        )
+        response = self.client.get(reverse('wagtailadmin_home'))
         self.assertEqual(response.status_code, 200)
-        response = self.client.get(
-            reverse('wagtailadmin_pages:revisions_view', args=[page1.pk, page1_revision.pk]),
-            HTTP_HOST='example.com'
-        )
-        self.assertEqual(response.status_code, 200)
+        # Bob should only see the welcome for example.com, not testserver
+        self.assertContains(response, "Welcome to the example.com Wagtail CMS")
+        self.assertNotContains(response, "testserver")
 
-        # Bob is not allowed to see the example.com homepage, so it should give 403.
-        response = self.client.get(
-            reverse('wagtailadmin_pages:revisions_index', args=[example_home.pk]),
-            HTTP_HOST='example.com'
-        )
-        self.assertEqual(response.status_code, 403)
-        response = self.client.get(
-            reverse('wagtailadmin_pages:revisions_view', args=[example_home.pk, example_home_revision.pk]),
-            HTTP_HOST='example.com'
-        )
-        self.assertEqual(response.status_code, 403)
+    def test_breadcrumb_with_no_user_permissions(self):
+        self.assertTrue(self.client.login(username='mary', password='password'))
+        response = self.client.get(reverse('wagtailadmin_home'))
+        self.assertEqual(response.status_code, 200)
+        # Since Mary has no page permissions, she should not see the breadcrumb
+        self.assertNotContains(response, """<li class="home"><a href="/admin/pages/4/" class="icon icon-home text-replace">Home</a></li>""")
 
 
 class TestPageCreation(TestCase, WagtailTestUtils):
@@ -523,13 +435,15 @@ class TestPageCreation(TestCase, WagtailTestUtils):
         response = self.client.get(reverse('wagtailadmin_pages:add_subpage', args=(self.root_page.id, )))
         self.assertEqual(response.status_code, 200)
 
-        self.assertContains(response, "Simple Page")
+        self.assertContains(response, "Simple page")
+        target_url = reverse('wagtailadmin_pages:add', args=('tests', 'simplepage', self.root_page.id))
+        self.assertContains(response, 'href="%s"' % target_url)
         # List of available page types should not contain pages with is_creatable = False
-        self.assertNotContains(response, "MTI Base Page")
+        self.assertNotContains(response, "MTI base page")
         # List of available page types should not contain abstract pages
-        self.assertNotContains(response, "Abstract Page")
+        self.assertNotContains(response, "Abstract page")
         # List of available page types should not contain pages whose parent_page_types forbid it
-        self.assertNotContains(response, "Business Child")
+        self.assertNotContains(response, "Business child")
 
     def test_add_subpage_with_subpage_types(self):
         # Add a BusinessIndex to test business rules in
@@ -542,9 +456,9 @@ class TestPageCreation(TestCase, WagtailTestUtils):
         response = self.client.get(reverse('wagtailadmin_pages:add_subpage', args=(business_index.id, )))
         self.assertEqual(response.status_code, 200)
 
-        self.assertContains(response, "Business Child")
+        self.assertContains(response, "Business child")
         # List should not contain page types not in the subpage_types list
-        self.assertNotContains(response, "Simple Page")
+        self.assertNotContains(response, "Simple page")
 
     def test_add_subpage_with_one_valid_subpage_type(self):
         # Add a BusinessSubIndex to test business rules in
@@ -583,6 +497,17 @@ class TestPageCreation(TestCase, WagtailTestUtils):
     def test_add_subpage_nonexistantparent(self):
         response = self.client.get(reverse('wagtailadmin_pages:add_subpage', args=(100000, )))
         self.assertEqual(response.status_code, 404)
+
+    def test_add_subpage_with_next_param(self):
+        response = self.client.get(
+            reverse('wagtailadmin_pages:add_subpage', args=(self.root_page.id, )),
+            {'next': '/admin/users/'}
+        )
+        self.assertEqual(response.status_code, 200)
+
+        self.assertContains(response, "Simple page")
+        target_url = reverse('wagtailadmin_pages:add', args=('tests', 'simplepage', self.root_page.id))
+        self.assertContains(response, 'href="%s?next=/admin/users/"' % target_url)
 
     def test_create_simplepage(self):
         response = self.client.get(reverse('wagtailadmin_pages:add', args=('tests', 'simplepage', self.root_page.id)))
@@ -2023,47 +1948,6 @@ class TestPageSearch(TestCase, WagtailTestUtils):
         self.assertContains(response, test_string % (query, base_css + " nolink"), status_code=200, html=True)
 
 
-class TestPageSearchWithExplorablePageRestrictions(TestCase, WagtailTestUtils):
-    """
-    See wagtail.wagtailadmin.tests.test_pages_views.TestExplorablePageVisibility for an explanation about
-    how the DB is set up, as many of the same rules will apply to these tests.
-    """
-
-    fixtures = ['test_explorable_pages.json']
-
-    def search(self, params=None, **extra):
-        return self.client.get(reverse('wagtailadmin_pages:search'), params or {}, **extra)
-
-    def test_search_results_appear_for_permitted_user(self):
-        # Jane should be able to see testserver's homepage.
-        self.assertTrue(self.client.login(username='jane', password='password'))
-        response = self.search({'q': 'testserver'})
-        self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, 'wagtailadmin/pages/search.html')
-        self.assertContains(response, "Welcome to testserver!")
-
-    def test_search_results_exclude_unexplorable_pages(self):
-        # Bob, however, should not see testserver's homepage, because he's not in a Group with permission to explore it.
-        self.assertTrue(self.client.login(username='bob', password='password'))
-        response = self.search({'q': 'testserver'})
-        self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, 'wagtailadmin/pages/search.html')
-        self.assertNotContains(response, "Welcome to testserver!")
-        self.assertContains(response, 'Sorry, no pages match')
-
-    def test_search_results_exclude_required_ancestors(self):
-        self.assertTrue(self.client.login(username='josh', password='password'))
-        response = self.search({'q': 'Other Content'})
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Other Content")
-
-        # The example.com homepage is a required ancestor of Josh's permitted pages, so he can't act upon it.
-        # Thus, the Explorer search shouldn't include it.
-        response = self.search({'q': 'Welcome to example.com!'})
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Sorry, no pages match")
-
-
 class TestPageMove(TestCase, WagtailTestUtils):
     def setUp(self):
         # Find root page
@@ -2443,6 +2327,62 @@ class TestPageCopy(TestCase, WagtailTestUtils):
 
         # treebeard should report no consistency problems with the tree
         self.assertFalse(any(Page.find_problems()), 'treebeard found consistency problems')
+
+    def test_before_copy_page_hook(self):
+        def hook_func(request, page):
+            self.assertIsInstance(request, HttpRequest)
+            self.assertIsInstance(page.specific, SimplePage)
+
+            return HttpResponse("Overridden!")
+
+        with self.register_hook('before_copy_page', hook_func):
+            response = self.client.get(reverse('wagtailadmin_pages:copy', args=(self.test_page.id,)))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"Overridden!")
+
+    def test_before_copy_page_hook_post(self):
+        def hook_func(request, page):
+            self.assertIsInstance(request, HttpRequest)
+            self.assertIsInstance(page.specific, SimplePage)
+
+            return HttpResponse("Overridden!")
+
+        with self.register_hook('before_copy_page', hook_func):
+            post_data = {
+                'new_title': "Hello world 2",
+                'new_slug': 'hello-world-2',
+                'new_parent_page': str(self.root_page.id),
+                'copy_subpages': False,
+                'publish_copies': False,
+            }
+            response = self.client.post(reverse('wagtailadmin_pages:copy', args=(self.test_page.id,)), post_data)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"Overridden!")
+
+    def test_after_copy_page_hook(self):
+        def hook_func(request, page, new_page):
+            self.assertIsInstance(request, HttpRequest)
+            self.assertIsInstance(page.specific, SimplePage)
+            self.assertIsInstance(new_page.specific, SimplePage)
+
+            return HttpResponse("Overridden!")
+
+        with self.register_hook('after_copy_page', hook_func):
+            post_data = {
+                'new_title': "Hello world 2",
+                'new_slug': 'hello-world-2',
+                'new_parent_page': str(self.root_page.id),
+                'copy_subpages': False,
+                'publish_copies': False,
+            }
+            response = self.client.post(reverse('wagtailadmin_pages:copy', args=(self.test_page.id,)), post_data)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"Overridden!")
+
+
 
 
 class TestPageUnpublish(TestCase, WagtailTestUtils):
@@ -3528,7 +3468,7 @@ class TestRevisions(TestCase, WagtailTestUtils):
         response = self.client.get(last_christmas_preview_url)
         self.assertEqual(response.status_code, 200)
 
-        self.assertContains(response, "Editing Event Page")
+        self.assertContains(response, "Editing Event page")
         self.assertContains(response, "You are viewing a previous revision of this page")
 
         # Form should show the content of the revision, not the current draft
@@ -3544,6 +3484,83 @@ class TestRevisions(TestCase, WagtailTestUtils):
         # Buttons should be relabelled
         self.assertContains(response, "Replace current draft")
         self.assertContains(response, "Publish this revision")
+
+
+class TestCompareRevisions(TestCase, WagtailTestUtils):
+    # Actual tests for the comparison classes can be found in test_compare.py
+
+    fixtures = ['test.json']
+
+    def setUp(self):
+        self.christmas_event = EventPage.objects.get(url_path='/home/events/christmas/')
+        self.christmas_event.title = "Last Christmas"
+        self.christmas_event.date_from = '2013-12-25'
+        self.christmas_event.body = (
+            "<p>Last Christmas I gave you my heart, "
+            "but the very next day you gave it away</p>"
+        )
+        self.last_christmas_revision = self.christmas_event.save_revision()
+        self.last_christmas_revision.created_at = local_datetime(2013, 12, 25)
+        self.last_christmas_revision.save()
+
+        self.christmas_event.title = "This Christmas"
+        self.christmas_event.date_from = '2014-12-25'
+        self.christmas_event.body = (
+            "<p>This year, to save me from tears, "
+            "I'll give it to someone special</p>"
+        )
+        self.this_christmas_revision = self.christmas_event.save_revision()
+        self.this_christmas_revision.created_at = local_datetime(2014, 12, 25)
+        self.this_christmas_revision.save()
+
+        self.login()
+
+    def test_compare_revisions(self):
+        compare_url = reverse(
+            'wagtailadmin_pages:revisions_compare',
+            args=(self.christmas_event.id, self.last_christmas_revision.id, self.this_christmas_revision.id)
+        )
+        response = self.client.get(compare_url)
+        self.assertEqual(response.status_code, 200)
+
+        self.assertContains(response, '<span class="deletion">Last Christmas I gave you my heart, but the very next day you gave it away</span><span class="addition">This year, to save me from tears, I&#39;ll give it to someone special</span>')
+
+    def test_compare_revisions_earliest(self):
+        compare_url = reverse(
+            'wagtailadmin_pages:revisions_compare',
+            args=(self.christmas_event.id, 'earliest', self.this_christmas_revision.id)
+        )
+        response = self.client.get(compare_url)
+        self.assertEqual(response.status_code, 200)
+
+        self.assertContains(response, '<span class="deletion">Last Christmas I gave you my heart, but the very next day you gave it away</span><span class="addition">This year, to save me from tears, I&#39;ll give it to someone special</span>')
+
+    def test_compare_revisions_latest(self):
+        compare_url = reverse(
+            'wagtailadmin_pages:revisions_compare',
+            args=(self.christmas_event.id, self.last_christmas_revision.id, 'latest')
+        )
+        response = self.client.get(compare_url)
+        self.assertEqual(response.status_code, 200)
+
+        self.assertContains(response, '<span class="deletion">Last Christmas I gave you my heart, but the very next day you gave it away</span><span class="addition">This year, to save me from tears, I&#39;ll give it to someone special</span>')
+
+    def test_compare_revisions_live(self):
+        # Mess with the live version, bypassing revisions
+        self.christmas_event.body = (
+            "<p>This year, to save me from tears, "
+            "I'll just feed it to the dog</p>"
+        )
+        self.christmas_event.save(update_fields=['body'])
+
+        compare_url = reverse(
+            'wagtailadmin_pages:revisions_compare',
+            args=(self.christmas_event.id, self.last_christmas_revision.id, 'live')
+        )
+        response = self.client.get(compare_url)
+        self.assertEqual(response.status_code, 200)
+
+        self.assertContains(response, '<span class="deletion">Last Christmas I gave you my heart, but the very next day you gave it away</span><span class="addition">This year, to save me from tears, I&#39;ll just feed it to the dog</span>')
 
 
 class TestIssue2599(TestCase, WagtailTestUtils):
@@ -3669,7 +3686,7 @@ class TestInlineStreamField(TestCase, WagtailTestUtils):
         self.assertEqual(response.status_code, 200)
 
         # response should include HTML declarations for streamfield child blocks
-        self.assertContains(response, '<li id="__PREFIX__-container" class="sequence-member blockname-rich_text">')
+        self.assertContains(response, '<li id="__PREFIX__-container" class="sequence-member">')
 
 
 class TestRecentEditsPanel(TestCase, WagtailTestUtils):
@@ -3787,3 +3804,149 @@ class TestIssue2994(TestCase, WagtailTestUtils):
         new_page = DefaultStreamPage.objects.get(slug='issue-2994-test')
         self.assertEqual(1, len(new_page.body))
         self.assertEqual('hello world', new_page.body[0].value)
+
+
+class TestParentalM2M(TestCase, WagtailTestUtils):
+    fixtures = ['test.json']
+
+    def setUp(self):
+        self.events_index = Page.objects.get(url_path='/home/events/')
+        self.christmas_page = Page.objects.get(url_path='/home/events/christmas/')
+        self.user = self.login()
+        self.holiday_category = EventCategory.objects.create(name='Holiday')
+        self.men_with_beards_category = EventCategory.objects.create(name='Men with beards')
+
+    def test_create_and_save(self):
+        post_data = {
+            'title': "Presidents' Day",
+            'date_from': "2017-02-20",
+            'slug': "presidents-day",
+            'audience': "public",
+            'location': "America",
+            'cost': "$1",
+            'carousel_items-TOTAL_FORMS': 0,
+            'carousel_items-INITIAL_FORMS': 0,
+            'carousel_items-MIN_NUM_FORMS': 0,
+            'carousel_items-MAX_NUM_FORMS': 0,
+            'speakers-TOTAL_FORMS': 0,
+            'speakers-INITIAL_FORMS': 0,
+            'speakers-MIN_NUM_FORMS': 0,
+            'speakers-MAX_NUM_FORMS': 0,
+            'related_links-TOTAL_FORMS': 0,
+            'related_links-INITIAL_FORMS': 0,
+            'related_links-MIN_NUM_FORMS': 0,
+            'related_links-MAX_NUM_FORMS': 0,
+            'categories': [self.holiday_category.id, self.men_with_beards_category.id]
+        }
+        response = self.client.post(
+            reverse('wagtailadmin_pages:add', args=('tests', 'eventpage', self.events_index.id)),
+            post_data
+        )
+        created_page = EventPage.objects.get(url_path='/home/events/presidents-day/')
+        self.assertRedirects(response, reverse('wagtailadmin_pages:edit', args=(created_page.id, )))
+        created_revision = created_page.get_latest_revision_as_page()
+
+        self.assertIn(self.holiday_category, created_revision.categories.all())
+        self.assertIn(self.men_with_beards_category, created_revision.categories.all())
+
+    def test_create_and_publish(self):
+        post_data = {
+            'action-publish': "Publish",
+            'title': "Presidents' Day",
+            'date_from': "2017-02-20",
+            'slug': "presidents-day",
+            'audience': "public",
+            'location': "America",
+            'cost': "$1",
+            'carousel_items-TOTAL_FORMS': 0,
+            'carousel_items-INITIAL_FORMS': 0,
+            'carousel_items-MIN_NUM_FORMS': 0,
+            'carousel_items-MAX_NUM_FORMS': 0,
+            'speakers-TOTAL_FORMS': 0,
+            'speakers-INITIAL_FORMS': 0,
+            'speakers-MIN_NUM_FORMS': 0,
+            'speakers-MAX_NUM_FORMS': 0,
+            'related_links-TOTAL_FORMS': 0,
+            'related_links-INITIAL_FORMS': 0,
+            'related_links-MIN_NUM_FORMS': 0,
+            'related_links-MAX_NUM_FORMS': 0,
+            'categories': [self.holiday_category.id, self.men_with_beards_category.id]
+        }
+        response = self.client.post(
+            reverse('wagtailadmin_pages:add', args=('tests', 'eventpage', self.events_index.id)),
+            post_data
+        )
+        self.assertRedirects(response, reverse('wagtailadmin_explore', args=(self.events_index.id, )))
+
+        created_page = EventPage.objects.get(url_path='/home/events/presidents-day/')
+        self.assertIn(self.holiday_category, created_page.categories.all())
+        self.assertIn(self.men_with_beards_category, created_page.categories.all())
+
+    def test_edit_and_save(self):
+        post_data = {
+            'title': "Christmas",
+            'date_from': "2017-12-25",
+            'slug': "christmas",
+            'audience': "public",
+            'location': "The North Pole",
+            'cost': "Free",
+            'carousel_items-TOTAL_FORMS': 0,
+            'carousel_items-INITIAL_FORMS': 0,
+            'carousel_items-MIN_NUM_FORMS': 0,
+            'carousel_items-MAX_NUM_FORMS': 0,
+            'speakers-TOTAL_FORMS': 0,
+            'speakers-INITIAL_FORMS': 0,
+            'speakers-MIN_NUM_FORMS': 0,
+            'speakers-MAX_NUM_FORMS': 0,
+            'related_links-TOTAL_FORMS': 0,
+            'related_links-INITIAL_FORMS': 0,
+            'related_links-MIN_NUM_FORMS': 0,
+            'related_links-MAX_NUM_FORMS': 0,
+            'categories': [self.holiday_category.id, self.men_with_beards_category.id]
+        }
+        response = self.client.post(
+            reverse('wagtailadmin_pages:edit', args=(self.christmas_page.id, )),
+            post_data
+        )
+        self.assertRedirects(response, reverse('wagtailadmin_pages:edit', args=(self.christmas_page.id, )))
+        updated_page = EventPage.objects.get(id=self.christmas_page.id)
+        created_revision = updated_page.get_latest_revision_as_page()
+
+        self.assertIn(self.holiday_category, created_revision.categories.all())
+        self.assertIn(self.men_with_beards_category, created_revision.categories.all())
+
+        # no change to live page record yet
+        self.assertEqual(0, updated_page.categories.count())
+
+    def test_edit_and_publish(self):
+        post_data = {
+            'action-publish': "Publish",
+            'title': "Christmas",
+            'date_from': "2017-12-25",
+            'slug': "christmas",
+            'audience': "public",
+            'location': "The North Pole",
+            'cost': "Free",
+            'carousel_items-TOTAL_FORMS': 0,
+            'carousel_items-INITIAL_FORMS': 0,
+            'carousel_items-MIN_NUM_FORMS': 0,
+            'carousel_items-MAX_NUM_FORMS': 0,
+            'speakers-TOTAL_FORMS': 0,
+            'speakers-INITIAL_FORMS': 0,
+            'speakers-MIN_NUM_FORMS': 0,
+            'speakers-MAX_NUM_FORMS': 0,
+            'related_links-TOTAL_FORMS': 0,
+            'related_links-INITIAL_FORMS': 0,
+            'related_links-MIN_NUM_FORMS': 0,
+            'related_links-MAX_NUM_FORMS': 0,
+            'categories': [self.holiday_category.id, self.men_with_beards_category.id]
+        }
+        response = self.client.post(
+            reverse('wagtailadmin_pages:edit', args=(self.christmas_page.id, )),
+            post_data
+        )
+        self.assertRedirects(response, reverse('wagtailadmin_explore', args=(self.events_index.id, )))
+        updated_page = EventPage.objects.get(id=self.christmas_page.id)
+        self.assertEqual(2, updated_page.categories.count())
+        self.assertIn(self.holiday_category, updated_page.categories.all())
+        self.assertIn(self.men_with_beards_category, updated_page.categories.all())

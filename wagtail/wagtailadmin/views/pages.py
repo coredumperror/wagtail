@@ -232,7 +232,7 @@ def create(request, content_type_app_name, content_type_model_name, parent_page_
                     ])
                 else:
                     messages.success(request, _("Page '{0}' created and published.").format(page.get_admin_display_title()), buttons=[
-                        messages.button(page.url, _('View live')),
+                        messages.button(page.url, _('View live'), new_window=True),
                         messages.button(reverse('wagtailadmin_pages:edit', args=(page.id,)), _('Edit'))
                     ])
             elif is_submitting:
@@ -240,8 +240,15 @@ def create(request, content_type_app_name, content_type_model_name, parent_page_
                     request,
                     _("Page '{0}' created and submitted for moderation.").format(page.get_admin_display_title()),
                     buttons=[
-                        messages.button(reverse('wagtailadmin_pages:view_draft', args=(page.id,)), _('View draft')),
-                        messages.button(reverse('wagtailadmin_pages:edit', args=(page.id,)), _('Edit'))
+                        messages.button(
+                            reverse('wagtailadmin_pages:view_draft', args=(page.id,)),
+                            _('View draft'),
+                            new_window=True
+                        ),
+                        messages.button(
+                            reverse('wagtailadmin_pages:edit', args=(page.id,)),
+                            _('Edit')
+                        )
                     ]
                 )
                 if not send_notification(page.get_latest_revision().id, 'submitted', request.user.pk):
@@ -389,7 +396,8 @@ def edit(request, page_id):
                     messages.success(request, message, buttons=[
                         messages.button(
                             page.url,
-                            _('View live')
+                            _('View live'),
+                            new_window=True
                         ),
                         messages.button(
                             reverse('wagtailadmin_pages:edit', args=(page_id,)),
@@ -408,7 +416,8 @@ def edit(request, page_id):
                 messages.success(request, message, buttons=[
                     messages.button(
                         reverse('wagtailadmin_pages:view_draft', args=(page_id,)),
-                        _('View draft')
+                        _('View draft'),
+                        new_window=True
                     ),
                     messages.button(
                         reverse('wagtailadmin_pages:edit', args=(page_id,)),
@@ -479,7 +488,15 @@ def edit(request, page_id):
 
     # Check for revisions still undergoing moderation and warn
     if latest_revision and latest_revision.submitted_for_moderation:
-        messages.warning(request, _("This page is currently awaiting moderation"))
+        buttons = []
+
+        if page.live:
+            buttons.append(messages.button(
+                reverse('wagtailadmin_pages:revisions_compare', args=(page.id, 'live', latest_revision.id)),
+                _('Compare with live version')
+            ))
+
+        messages.warning(request, _("This page is currently awaiting moderation"), buttons=buttons)
 
     return render(request, 'wagtailadmin/pages/edit.html', {
         'page': page,
@@ -808,6 +825,11 @@ def copy(request, page_id):
 
     next_url = get_valid_next_url_from_request(request)
 
+    for fn in hooks.get_hooks('before_copy_page'):
+        result = fn(request, page)
+        if hasattr(result, 'status_code'):
+            return result
+
     # Check if user is submitting
     if request.method == 'POST':
         # Prefill parent_page in case the form is invalid (as prepopulated value for the form field,
@@ -846,6 +868,11 @@ def copy(request, page_id):
                 )
             else:
                 messages.success(request, _("Page '{0}' copied.").format(page.get_admin_display_title()))
+
+            for fn in hooks.get_hooks('after_copy_page'):
+                result = fn(request, page, new_page)
+                if hasattr(result, 'status_code'):
+                    return result
 
             # Redirect to explore of parent page
             if next_url:
@@ -902,7 +929,7 @@ def approve_moderation(request, revision_id):
     if request.method == 'POST':
         revision.approve_moderation()
         messages.success(request, _("Page '{0}' published.").format(revision.page.get_admin_display_title()), buttons=[
-            messages.button(revision.page.url, _('View live')),
+            messages.button(revision.page.url, _('View live'), new_window=True),
             messages.button(reverse('wagtailadmin_pages:edit', args=(revision.page.id,)), _('Edit'))
         ])
         if not send_notification(revision.id, 'approved', request.user.pk):
@@ -1063,3 +1090,56 @@ def revisions_view(request, page_id, revision_id):
     revision_page = revision.as_page_object()
 
     return revision_page.serve_preview(page.dummy_request(request), page.default_preview_mode)
+
+
+def revisions_compare(request, page_id, revision_id_a, revision_id_b):
+    page = get_object_or_404(Page, id=page_id).specific
+
+    # Get revision to compare from
+    if revision_id_a == 'live':
+        if not page.live:
+            raise Http404
+
+        revision_a = page
+        revision_a_heading = _("Live")
+    elif revision_id_a == 'earliest':
+        revision_a = page.revisions.order_by('created_at', 'id').first()
+        if revision_a:
+            revision_a = revision_a.as_page_object()
+            revision_a_heading = _("Earliest")
+        else:
+            raise Http404
+    else:
+        revision_a = get_object_or_404(page.revisions, id=revision_id_a).as_page_object()
+        revision_a_heading = str(get_object_or_404(page.revisions, id=revision_id_a).created_at)
+
+    # Get revision to compare to
+    if revision_id_b == 'live':
+        if not page.live:
+            raise Http404
+
+        revision_b = page
+        revision_b_heading = _("Live")
+    elif revision_id_b == 'latest':
+        revision_b = page.revisions.order_by('created_at', 'id').last()
+        if revision_b:
+            revision_b = revision_b.as_page_object()
+            revision_b_heading = _("Latest")
+        else:
+            raise Http404
+    else:
+        revision_b = get_object_or_404(page.revisions, id=revision_id_b).as_page_object()
+        revision_b_heading = str(get_object_or_404(page.revisions, id=revision_id_b).created_at)
+
+    comparison = page.get_edit_handler().get_comparison()
+    comparison = [comp(revision_a, revision_b) for comp in comparison]
+    comparison = [comp for comp in comparison if comp.has_changed()]
+
+    return render(request, 'wagtailadmin/pages/revisions/compare.html', {
+        'page': page,
+        'revision_a_heading': revision_a_heading,
+        'revision_a': revision_a,
+        'revision_b_heading': revision_b_heading,
+        'revision_b': revision_b,
+        'comparison': comparison,
+    })
