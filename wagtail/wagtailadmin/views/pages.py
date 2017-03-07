@@ -807,7 +807,7 @@ def set_page_position(request, page_to_move_id):
 
 
 def copy(request, page_id):
-    page = get_page_if_explorable(page_id, request, allow_ancestors=False)
+    page = Page.objects.get(id=page_id)
 
     # Parent page defaults to parent of source page
     parent_page = page.get_parent()
@@ -1021,7 +1021,7 @@ def unlock(request, page_id):
 
 
 def revisions_index(request, page_id):
-    page = get_page_if_explorable(page_id, request, allow_ancestors=False).specific
+    page = get_object_or_404(Page, id=page_id).specific
 
     # Get page ordering
     ordering = request.GET.get('ordering', '-created_at')
@@ -1080,7 +1080,7 @@ def revisions_revert(request, page_id, revision_id):
 
 
 def revisions_view(request, page_id, revision_id):
-    page = get_page_if_explorable(page_id, request, allow_ancestors=False).specific
+    page = get_object_or_404(Page, id=page_id).specific
     revision = get_object_or_404(page.revisions, id=revision_id)
     revision_page = revision.as_page_object()
 

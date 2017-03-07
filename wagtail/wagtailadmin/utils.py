@@ -272,7 +272,7 @@ def _get_page_if_permitted(page_id, request, allow_ancestors, choosable):
         return page
 
     # Other users can only explore/choose their permitted pages.
-    page_perms_proxy = page.permissions_for_user(request.user, request)
+    page_perms_proxy = page.permissions_for_user(request.user)
     if (choosable and page_perms_proxy.can_choose(allow_ancestors)) or page_perms_proxy.can_explore(allow_ancestors):
         return page
     else:
