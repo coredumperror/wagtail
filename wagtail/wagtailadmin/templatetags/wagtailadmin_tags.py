@@ -134,7 +134,7 @@ def page_permissions(context, page):
     # Create a UserPagePermissionsProxy object to represent the user's global permissions, and
     # cache it in the context for the duration of the page request, if one does not exist already
     if 'user_page_permissions' not in context:
-        context['user_page_permissions'] = UserPagePermissionsProxy(context['request'].user, request=context['request'])
+        context['user_page_permissions'] = UserPagePermissionsProxy(context['request'].user)
 
     # Now retrieve a PagePermissionTester from it, specific to the given page
     return context['user_page_permissions'].for_page(page)
