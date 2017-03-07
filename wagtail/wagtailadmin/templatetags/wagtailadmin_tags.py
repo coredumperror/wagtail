@@ -405,7 +405,13 @@ def current_user_can_perform_actions(request, page):
     This tag differs from can_explore_page as it will return False for pages that the
     current user can explore through, but cannot act upon.
     """
-    return page.permissions_for_user(request.user, request).can_explore(allow_ancestors=False)
+    #TODO: Move this to our Caltech's own wagtail-multitenant repository, if necessary after refactor
+    perms = page.permissions_for_user(request.user)
+    return perms.can_edit() or \
+       perms.can_delete() or \
+       perms.can_add_subpage() or \
+       perms.can_publish() or \
+       perms.can_unpublish()
 
 
 @register.assignment_tag
