@@ -3,14 +3,13 @@ from __future__ import absolute_import, unicode_literals
 import json
 
 from django.http import Http404
-from django.shortcuts import render
+from django.shortcuts import get_object_or_404, render
 
 from wagtail.utils.pagination import paginate
 from wagtail.wagtailadmin.forms import EmailLinkChooserForm, ExternalLinkChooserForm, SearchForm
 from wagtail.wagtailadmin.modal_workflow import render_modal_workflow
 from wagtail.wagtailadmin.utils import get_page_if_choosable
-from wagtail.wagtailcore.models import (
-    Page, filter_choosable_pages, get_choosable_page_paths, get_closest_common_ancestor_path)
+from wagtail.wagtailcore.models import Page
 from wagtail.wagtailcore.utils import resolve_model_string
 
 
@@ -63,25 +62,20 @@ def browse(request, parent_page_id=None):
 
     # Find parent page
     if parent_page_id:
-        parent_page = get_page_if_choosable(parent_page_id, request)
-    else:
+        parent_page = get_object_or_404(Page, id=parent_page_id)
+    elif desired_classes == (Page,):
+        # Just use the root page
         parent_page = Page.get_first_root_node()
-        if not request.user.is_superuser:
-            cca_path = get_closest_common_ancestor_path(request, choosable=True)
-            if cca_path:
-                parent_page = Page.objects.get(path=cca_path)
-        elif desired_classes == (Page,):
-            # Just use the root page
-            pass
-        else:
-            # Find the highest common ancestor for the specific classes passed in
-            # In many cases, such as selecting an EventPage under an EventIndex,
-            # this will help the administrator find their page quicker.
-            all_desired_pages = filter_page_type(Page.objects.all(), desired_classes)
-            parent_page = all_desired_pages.first_common_ancestor()
+        pass
+    else:
+        # Find the highest common ancestor for the specific classes passed in
+        # In many cases, such as selecting an EventPage under an EventIndex,
+        # this will help the administrator find their page quicker.
+        all_desired_pages = filter_page_type(Page.objects.all(), desired_classes)
+        parent_page = all_desired_pages.first_common_ancestor()
 
     # Include only the choosable children in the unfiltered page queryset.
-    pages = parent_page.get_choosable_children(request).prefetch_related('content_type')
+    pages = parent_page.get_children()
 
     # Filter them by page type
     if desired_classes != (Page,):
@@ -92,19 +86,11 @@ def browse(request, parent_page_id=None):
         descendable_pages = pages.filter(numchild__gt=0)
         pages = choosable_pages | descendable_pages
 
-    # Users must be able to navigate through required ancestors, but cannot choose them.
-    if not request.user.is_superuser:
-        required_ancestors = get_choosable_page_paths(request)[1]
-    else:
-        # Superusers don't have required ancestors because they have implicit permission on the Root page.
-        required_ancestors = []
-
-    # Parent page can be chosen if it is a instance of desired_classes, and it's not a required ancestor.
+    # Parent page can be chosen if it is a instance of desired_classes
     can_choose_root = request.GET.get('can_choose_root', False)
     parent_page.can_choose = (
         issubclass(parent_page.specific_class or Page, desired_classes) and
-        (can_choose_root or not parent_page.is_root()) and
-        parent_page.path not in required_ancestors
+        (can_choose_root or not parent_page.is_root())
     )
 
     # Pagination
@@ -153,7 +139,6 @@ def search(request, parent_page_id=None):
         # Never include the Root page. Prefetch the content_type for better performance.
         pages = Page.objects.exclude(depth=1).prefetch_related('content_type')
         pages = filter_page_type(pages, desired_classes)
-        pages = filter_choosable_pages(pages, request, include_ancestors=False)
 
         pages = pages.search(search_form.cleaned_data['q'], fields=['title'])
     else:
