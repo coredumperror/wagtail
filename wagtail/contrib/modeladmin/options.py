@@ -9,7 +9,7 @@ from django.utils.safestring import mark_safe
 from django.utils.translation import ugettext_lazy as _
 
 from wagtail.wagtailcore import hooks
-from wagtail.wagtailcore.models import Page, filter_explorable_pages
+from wagtail.wagtailcore.models import Page
 from wagtail.wagtailimages.models import Filter
 
 from .helpers import (
@@ -259,7 +259,6 @@ class ModelAdmin(WagtailRegisterable):
         current user.
         """
         qs = self.model._default_manager.get_queryset()
-        qs = filter_explorable_pages(qs, request, include_ancestors=False)
 
         ordering = self.get_ordering(request)
         if ordering:
