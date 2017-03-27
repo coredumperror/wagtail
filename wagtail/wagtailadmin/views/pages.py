@@ -22,7 +22,7 @@ from wagtail.wagtailcore import hooks
 from wagtail.wagtailcore.models import (
     Page, PageRevision, UserPagePermissionsProxy
 )
-from wagtail.wagtailadmin.navigation import get_navigation_menu_items
+from wagtail.wagtailadmin.navigation import get_navigation_menu_items, get_pages_with_direct_explore_permission
 
 
 def get_valid_next_url_from_request(request):
@@ -890,9 +890,8 @@ def search(request):
         form = SearchForm(request.GET)
         if form.is_valid():
             q = form.cleaned_data['q']
-            pages = Page.objects.prefetch_related('content_type')
-            pages = filter_explorable_pages(pages, request, include_ancestors=False)
-            pages = pages.search(q)
+            #pages = list(get_pages_with_direct_explore_permission(request.user).prefetch_related('content_type')).search(q)
+            pages = Page.objects.all().prefetch_related('content_type').search(q)
             paginator, pages = paginate(request, pages)
     else:
         form = SearchForm()
