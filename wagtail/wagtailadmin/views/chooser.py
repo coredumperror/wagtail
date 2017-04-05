@@ -100,9 +100,7 @@ def browse(request, parent_page_id=None):
 
     # Annotate each page with can_choose/can_decend flags
     for page in pages:
-        if page.path in required_ancestors:
-            page.can_choose = False
-        elif desired_classes == (Page, ):
+        if desired_classes == (Page, ):
             page.can_choose = True
         else:
             page.can_choose = issubclass(page.specific_class or Page, desired_classes)
