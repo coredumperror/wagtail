@@ -8,7 +8,7 @@ from django.shortcuts import get_object_or_404, render
 from wagtail.utils.pagination import paginate
 from wagtail.wagtailadmin.forms import EmailLinkChooserForm, ExternalLinkChooserForm, SearchForm
 from wagtail.wagtailadmin.modal_workflow import render_modal_workflow
-from wagtail.wagtailadmin.utils import get_page_if_choosable
+from wagtail.wagtailcore import hooks
 from wagtail.wagtailcore.models import Page
 from wagtail.wagtailcore.utils import resolve_model_string
 
@@ -66,7 +66,6 @@ def browse(request, parent_page_id=None):
     elif desired_classes == (Page,):
         # Just use the root page
         parent_page = Page.get_first_root_node()
-        pass
     else:
         # Find the highest common ancestor for the specific classes passed in
         # In many cases, such as selecting an EventPage under an EventIndex,
@@ -74,8 +73,12 @@ def browse(request, parent_page_id=None):
         all_desired_pages = filter_page_type(Page.objects.all(), desired_classes)
         parent_page = all_desired_pages.first_common_ancestor()
 
-    # Include only the choosable children in the unfiltered page queryset.
-    pages = parent_page.get_children()
+    # Get children of parent page
+    pages = parent_page.get_children().specific()
+
+    # allow hooks to modify the queryset
+    for hook in hooks.get_hooks('construct_page_chooser_queryset'):
+        pages = hook(pages, request)
 
     # Filter them by page type
     if desired_classes != (Page,):
@@ -86,8 +89,9 @@ def browse(request, parent_page_id=None):
         descendable_pages = pages.filter(numchild__gt=0)
         pages = choosable_pages | descendable_pages
 
-    # Parent page can be chosen if it is a instance of desired_classes
     can_choose_root = request.GET.get('can_choose_root', False)
+
+    # Parent page can be chosen if it is a instance of desired_classes
     parent_page.can_choose = (
         issubclass(parent_page.specific_class or Page, desired_classes) and
         (can_choose_root or not parent_page.is_root())
@@ -132,15 +136,20 @@ def search(request, parent_page_id=None):
     except (ValueError, LookupError):
         raise Http404
 
+    pages = Page.objects.all()
+    # allow hooks to modify the queryset
+    for hook in hooks.get_hooks('construct_page_chooser_queryset'):
+        pages = hook(pages, request)
+
     search_form = SearchForm(request.GET)
     if search_form.is_valid() and search_form.cleaned_data['q']:
-        # Never include the Root page. Prefetch the content_type for better performance.
-        pages = Page.objects.exclude(depth=1).prefetch_related('content_type')
+        pages = pages.exclude(
+            depth=1  # never include root
+        )
         pages = filter_page_type(pages, desired_classes)
-
         pages = pages.search(search_form.cleaned_data['q'], fields=['title'])
     else:
-        pages = Page.objects.none()
+        pages = pages.none()
 
     paginator, pages = paginate(request, pages, per_page=25)
 

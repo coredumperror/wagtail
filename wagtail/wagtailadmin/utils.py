@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import absolute_import, unicode_literals
 
 import logging
@@ -5,13 +6,13 @@ from functools import wraps
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.core.exceptions import PermissionDenied
-from django.shortcuts import get_object_or_404, redirect
 from django.contrib.contenttypes.models import ContentType
 from django.core.mail import send_mail as django_send_mail
 from django.db.models import Count, Q
+from django.shortcuts import redirect
 from django.template.loader import render_to_string
 from django.utils.translation import ugettext as _
+from django.utils.translation import override, ugettext_lazy
 from modelcluster.fields import ParentalKey
 from taggit.models import Tag
 
@@ -19,6 +20,34 @@ from wagtail.wagtailcore.models import GroupPagePermission, Page, PageRevision
 from wagtail.wagtailusers.models import UserProfile
 
 logger = logging.getLogger('wagtail.admin')
+
+# Wagtail languages with >=90% coverage
+# This list is manually maintained
+WAGTAILADMIN_PROVIDED_LANGUAGES = [
+    ('ca', ugettext_lazy('Catalan')),
+    ('de', ugettext_lazy('German')),
+    ('el', ugettext_lazy('Greek')),
+    ('en', ugettext_lazy('English')),
+    ('es', ugettext_lazy('Spanish')),
+    ('fi', ugettext_lazy('Finnish')),
+    ('fr', ugettext_lazy('French')),
+    ('gl', ugettext_lazy('Galician')),
+    ('is-is', ugettext_lazy('Icelandic')),
+    ('it', ugettext_lazy('Italian')),
+    ('lt', ugettext_lazy('Lithuanian')),
+    ('nb', ugettext_lazy('Norwegian Bokmål')),
+    ('nl-nl', ugettext_lazy('Netherlands Dutch')),
+    ('pl', ugettext_lazy('Polish')),
+    ('pt-br', ugettext_lazy('Brazilian Portuguese')),
+    ('pt-pt', ugettext_lazy('Portuguese')),
+    ('ro', ugettext_lazy('Romanian')),
+    ('ru', ugettext_lazy('Russian')),
+    ('zh-cn', ugettext_lazy('Chinese (China)')),
+]
+
+
+def get_available_admin_languages():
+    return getattr(settings, 'WAGTAILADMIN_PERMITTED_LANGUAGES', WAGTAILADMIN_PROVIDED_LANGUAGES)
 
 
 def get_object_usage(obj):
@@ -217,9 +246,11 @@ def send_notification(page_revision_id, notification, excluded_user_id):
             # update context with this recipient
             context["user"] = recipient
 
-            # Get email subject and content
-            email_subject = render_to_string(template_subject, context).strip()
-            email_content = render_to_string(template_text, context).strip()
+            # Translate text to the recipient language settings
+            with override(recipient.wagtail_userprofile.get_preferred_language()):
+                # Get email subject and content
+                email_subject = render_to_string(template_subject, context).strip()
+                email_content = render_to_string(template_text, context).strip()
 
             kwargs = {}
             if getattr(settings, 'WAGTAILADMIN_NOTIFICATION_USE_HTML', False):
@@ -237,43 +268,25 @@ def send_notification(page_revision_id, notification, excluded_user_id):
     return sent_count == len(email_recipients)
 
 
-def get_page_if_explorable(page_id, request, allow_ancestors=True):
+def user_has_any_page_permission(user):
     """
-    Returns the Page with the given page_id, if the current user has permission to explore that Page.
+    Check if a user has any permission to add, edit, or otherwise manage any
+    page.
     """
-    return _get_page_if_permitted(page_id, request, allow_ancestors, choosable=False)
+    # Can't do nothin if you're not active.
+    if not user.is_active:
+        return False
 
+    # Superusers can do anything.
+    if user.is_superuser:
+        return True
 
-def get_page_if_choosable(page_id, request, allow_ancestors=True):
-    """
-    Returns the Page with the given page_id, if the current user has permission to choose that Page.
-    """
-    return _get_page_if_permitted(page_id, request, allow_ancestors, choosable=True)
+    # At least one of the users groups has a GroupPagePermission.
+    # The user can probably do something.
+    if GroupPagePermission.objects.filter(group__in=user.groups.all()).exists():
+        return True
 
+    # Specific permissions for a page type do not mean anything.
 
-def _get_page_if_permitted(page_id, request, allow_ancestors, choosable):
-    """
-    Internal function called by get_page_if_explorable() and get_page_if_choosable(), which does all their work.
-    If the Page is not explorable/choosable, an exception will be thrown:
-        PermissionDenied if the Page is on the current site
-        Http404 if not
-
-    Required ancestors are normally considered explorable/choosable, since Explorer and the Page Chooser need to let
-    users traverse through them to get to the Pages they are permitted to act upon or choose.
-    If allow_ancestors=False, though, required ancestors will not be considered explorable/choosable.
-    This lets Explorer/PageChooser *display* a required ancestor to a user who isn't permitted to act upon or choose it.
-
-    If choosable=True, the Page's permissibility will be evaluated based on whether it's got the "choose" permission,
-    rather than whether it's explorable.
-    """
-    page = get_object_or_404(Page, id=page_id)
-    # Superusers can explore and choose every page.
-    if request.user.is_superuser:
-        return page
-
-    # Other users can only explore/choose their permitted pages.
-    page_perms_proxy = page.permissions_for_user(request.user)
-    if (choosable and page_perms_proxy.can_choose(allow_ancestors)) or page_perms_proxy.can_explore(allow_ancestors):
-        return page
-    else:
-        raise PermissionDenied
+    # No luck! This user can not do anything with pages.
+    return False

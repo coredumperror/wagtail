@@ -8,6 +8,7 @@ from django.conf import settings
 from django.contrib.humanize.templatetags.humanize import intcomma
 from django.contrib.messages.constants import DEFAULT_TAGS as MESSAGE_TAGS
 from django.template.defaultfilters import stringfilter
+from django.template.loader import render_to_string
 from django.utils.html import conditional_escape
 from django.utils.safestring import mark_safe
 
@@ -42,6 +43,20 @@ def explorer_subnav(nodes):
     return {
         'nodes': nodes
     }
+
+
+@register.simple_tag(takes_context=True)
+def menu_search(context):
+    request = context['request']
+
+    search_areas = admin_search_areas.search_items_for_request(request)
+    if not search_areas:
+        return ''
+    search_area = search_areas[0]
+
+    return render_to_string('wagtailadmin/shared/menu_search.html', {
+        'search_url': search_area.url,
+    })
 
 
 @register.inclusion_tag('wagtailadmin/shared/main_nav.html', takes_context=True)
@@ -92,14 +107,6 @@ def ellipsistrim(value, max_length):
             truncd_val = truncd_val[:truncd_val.rfind(" ")]
         return truncd_val + "..."
     return value
-
-
-@register.filter
-def no_thousand_separator(num):
-    """
-    Prevent USE_THOUSAND_SEPARATOR from automatically inserting a thousand separator on this value
-    """
-    return str(num)
 
 
 @register.filter
@@ -191,6 +198,11 @@ def allow_unicode_slugs():
         return False
     else:
         return getattr(settings, 'WAGTAIL_ALLOW_UNICODE_SLUGS', True)
+
+
+@assignment_tag
+def auto_update_preview():
+    return getattr(settings, 'WAGTAIL_AUTO_UPDATE_PREVIEW', False)
 
 
 class EscapeScriptNode(template.Node):

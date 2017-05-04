@@ -1,10 +1,11 @@
 from __future__ import absolute_import, unicode_literals
 
+import mock
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.test import TestCase
 
-from wagtail.tests.modeladmintest.models import Author, Book, Publisher
+from wagtail.tests.modeladmintest.models import Author, Book, Publisher, Token
 from wagtail.tests.utils import WagtailTestUtils
 from wagtail.wagtailimages.models import Image
 from wagtail.wagtailimages.tests.utils import get_test_image_file
@@ -181,6 +182,16 @@ class TestCreateView(TestCase, WagtailTestUtils):
         # Check that a form error was raised
         self.assertFormError(response, 'form', 'title', "This field is required.")
 
+    def test_exclude_passed_to_extract_panel_definitions(self):
+        path_to_form_fields_exclude_property = 'wagtail.contrib.modeladmin.options.ModelAdmin.form_fields_exclude'
+        with mock.patch('wagtail.contrib.modeladmin.views.extract_panel_definitions_from_model_class') as m:
+            with mock.patch(path_to_form_fields_exclude_property, new_callable=mock.PropertyMock) as mock_form_fields_exclude:
+                mock_form_fields_exclude.return_value = ['123']
+
+                self.get()
+                mock_form_fields_exclude.assert_called()
+                m.assert_called_with(Book, exclude=mock_form_fields_exclude.return_value)
+
 
 class TestInspectView(TestCase, WagtailTestUtils):
     fixtures = ['modeladmintest_test.json']
@@ -296,6 +307,16 @@ class TestEditView(TestCase, WagtailTestUtils):
 
         # Check that a form error was raised
         self.assertFormError(response, 'form', 'title', "This field is required.")
+
+    def test_exclude_passed_to_extract_panel_definitions(self):
+        path_to_form_fields_exclude_property = 'wagtail.contrib.modeladmin.options.ModelAdmin.form_fields_exclude'
+        with mock.patch('wagtail.contrib.modeladmin.views.extract_panel_definitions_from_model_class') as m:
+            with mock.patch(path_to_form_fields_exclude_property, new_callable=mock.PropertyMock) as mock_form_fields_exclude:
+                mock_form_fields_exclude.return_value = ['123']
+
+                self.get(1)
+                mock_form_fields_exclude.assert_called()
+                m.assert_called_with(Book, exclude=mock_form_fields_exclude.return_value)
 
 
 class TestPageSpecificViews(TestCase, WagtailTestUtils):
@@ -440,3 +461,26 @@ class TestEditorAccess(TestCase):
     def test_delete_post_permitted(self):
         response = self.client.post('/admin/modeladmintest/book/delete/2/')
         self.assertEqual(response.status_code, self.expected_status_code)
+
+
+class TestQuoting(TestCase, WagtailTestUtils):
+    fixtures = ['modeladmintest_test.json']
+    expected_status_code = 200
+
+    def setUp(self):
+        self.login()
+        self.tok_reg = Token.objects.create(key="RegularName")
+        self.tok_irr = Token.objects.create(key="Irregular_Name")
+
+    def test_action_links(self):
+        response = self.client.get('/admin/modeladmintest/token/')
+
+        self.assertContains(response, 'href="/admin/modeladmintest/token/edit/RegularName/"')
+        self.assertContains(response, 'href="/admin/modeladmintest/token/delete/RegularName/"')
+        self.assertContains(response, 'href="/admin/modeladmintest/token/edit/Irregular_5FName/"')
+        self.assertContains(response, 'href="/admin/modeladmintest/token/delete/Irregular_5FName/"')
+
+        response = self.client.get('/admin/modeladmintest/token/edit/Irregular_5FName/')
+        self.assertEqual(response.status_code, 200)
+        response = self.client.get('/admin/modeladmintest/token/delete/Irregular_5FName/')
+        self.assertEqual(response.status_code, 200)
