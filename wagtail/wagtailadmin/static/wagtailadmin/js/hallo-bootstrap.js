@@ -12,9 +12,7 @@ function makeHalloRichTextEditable(id) {
         (we don't remove the span entirely as that messes with the cursor position,
         and spans will be removed anyway by our whitelisting)
         */
-        $('span[style]', richText).filter(function() {
-            return this.attributes.length === 1;
-        }).removeAttr('style');
+        $('*[style]', richText).removeAttr('style');
         removeStylingPending = false;
     }
 
