@@ -13,6 +13,8 @@ function makeHalloRichTextEditable(id) {
         and spans will be removed anyway by our whitelisting)
         */
         $('*[style]', richText).removeAttr('style');
+        // Remove any style elements in the pasted sections
+        $('style').remove();
         removeStylingPending = false;
     }
 
