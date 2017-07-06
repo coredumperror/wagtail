@@ -14,9 +14,6 @@ function makeHalloRichTextEditable(id) {
         */
         $('*[style]', richText).removeAttr('style');
         $('*[class]', richText).removeAttr('class');
-        // Remove any style and span elements in the pasted sections
-        $('style', richText).remove();
-        $('span', richText).remove();
         removeStylingPending = false;
     }
 
