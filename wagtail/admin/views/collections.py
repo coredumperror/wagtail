@@ -55,8 +55,8 @@ class Index(IndexView):
             self.parent_collection = get_manageable_root_collection(self.request.user)
             if not self.parent_collection:
                 raise PermissionDenied
-
-        return get_collections_with_management_permission(user=self.request.user, parent=self.parent_collection)
+        # Since the user is permitted to manage self.parent_collection, they are also so permitted for its children.
+        return self.parent_collection.get_children()
 
     def get_context_data(self):
         if self.args:

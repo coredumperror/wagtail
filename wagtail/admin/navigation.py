@@ -13,18 +13,12 @@ def get_pages_with_direct_explore_permission(user):
         )
 
 
-def get_collections_with_management_permission(user, parent=None):
-    # Get all collections that the user has permissions for
-
+def get_collections_with_management_permission(user):
+    # Get all Collections that the User has permissions for.
     qs = Collection.objects
 
-    if parent:
-        if user.is_superuser:
-            # If the user is a superuser, they will have permission for all children
-            return parent.get_children()
-        qs = parent.get_children()
-    elif user.is_superuser:
-        # If there was no parent supplied, we return all the first level collections for the superuser
+    if user.is_superuser:
+        # Superusers have permission on all Collections.
         return qs.filter(depth=1)
 
     return qs.filter(
