@@ -72,7 +72,7 @@ def collection_breadcrumb(context, collection, include_self=False):
     user = context['request'].user
 
     # find the closest common ancestor of the collections that this user has direct manage permission
-    # (i.e. add/edit/bulk delete) over; this will be the root of the breadcrumb
+    # (i.e. add/edit/bulk delete) over; this will be the root of the breadcrumb.
     cca = get_manageable_root_collection(user)
     if not cca:
         return {'collections': Collection.objects.none()}

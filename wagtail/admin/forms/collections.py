@@ -6,11 +6,10 @@ from django.db import transaction
 from django.template.loader import render_to_string
 from django.utils.translation import ugettext as _
 
-from wagtail.core.models import Collection, CollectionViewRestriction, GroupCollectionPermission
-from wagtail.admin import widgets
 from wagtail.core.models import (
-    COLLECTION_PERMISSION_TYPE_CHOICES, COLLECTION_PERMISSION_TYPES, Collection, GroupCollectionManagementPermission)
-
+    Collection, CollectionViewRestriction, GroupCollectionPermission, GroupCollectionManagementPermission,
+    COLLECTION_PERMISSION_TYPE_CHOICES, COLLECTION_PERMISSION_TYPES)
+from wagtail.admin import widgets
 from .view_restrictions import BaseViewRestrictionForm
 
 

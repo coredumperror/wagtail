@@ -1,5 +1,4 @@
 from django.core.exceptions import PermissionDenied
-from django.http import HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils.translation import ugettext_lazy
@@ -55,7 +54,7 @@ class Index(IndexView):
             # Find the root collection that the user has access to
             self.parent_collection = get_manageable_root_collection(self.request.user)
             if not self.parent_collection:
-                raise HttpResponseForbidden
+                raise PermissionDenied
 
         return get_collections_with_management_permission(user=self.request.user, parent=self.parent_collection)
 
