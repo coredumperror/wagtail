@@ -741,7 +741,7 @@ table.listing {
                 font-size: 1.8em;
                 font-weight: 500;
 
-                 a {
+                a {
                     color: $color-white;
                 }
 
@@ -750,8 +750,9 @@ table.listing {
                 }
             }
 
-             .actions {
+            .actions {
                 padding-bottom: 1.5em;
+                visibility: visible;
             }
 
              .button {
@@ -759,22 +760,22 @@ table.listing {
                 color: $color-white;
                 border-color: $color-teal-darker;
 
-                 &:hover {
+                &:hover {
                     color: $color-white;
                     background: $color-teal-darker;
                 }
 
-                 &.bicolor {
+                &.bicolor {
                     background: $color-teal-darker;
                 }
             }
         }
 
-         .no-results-message {
+        .no-results-message {
             padding: 1.2em 1em;
         }
 
-         .children {
+        .children {
             width: 12em;
         }
 
@@ -786,4 +787,10 @@ table.listing {
             }
         }
     }
+}
+
+// AdminCollectionWidget is a Select, but Wagtail's widgettype template tag calls it an admin_collection_widget, so we
+// need to add this CSS rule to make the usual Select rules apply.
+.model_choice_field.admin_collection_widget label {
+  padding-top: 1.2em;
 }
