@@ -1,3 +1,4 @@
+{% load wagtailadmin_tags %}
 {% load wagtailimages_tags %}
 {% load i18n %}
 {% trans "Choose an image" as choose_str %}
@@ -21,7 +22,7 @@
                     {% include "wagtailadmin/shared/field_as_li.html" with field=field %}
                 {% endfor %}
                 {% if collections %}
-                    {% include "wagtailadmin/shared/collection_chooser.html" %}
+                    {% collection_chooser collections %}
                 {% endif %}
                 {% if popular_tags %}
                     <li class="taglist">
