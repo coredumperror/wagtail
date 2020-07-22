@@ -26,3 +26,6 @@ client/node_modules
 
 ### vscode
 .vscode
+
+### Added by rrollins
+.python-version
